@@ -63,3 +63,59 @@ def test_basic():
             ["xyzzy", "bork", 50],
         )
     )
+
+
+def test_repeated_value_keyword():
+    assert_that(Q("SELECT {a}, {b}, {a}", a="a", b="b").query()).is_equal_to(
+        ("SELECT $1, $2, $1", ["a", "b"])
+    )
+
+
+def test_repeated_value_nested():
+    sq_a = get_orders({"id": "a"})
+    sq_b = get_orders({"id": "b"})
+
+    assert_that(
+        Q(
+            """
+            SELECT a.*, b.*
+              FROM ({sq_a}) a,
+                   ({sq_b}) b
+            """,
+            sq_a=sq_a,
+            sq_b=sq_b,
+        ).query()
+    ).is_equal_to(
+        (
+            """
+            SELECT a.*, b.*
+              FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,
+                   (SELECT * FROM orders WHERE TRUE AND id = $2) b
+            """,
+            ["a", "b"],
+        )
+    )
+
+    sq_a = get_orders({"id": "a"})
+    sq_b = get_orders({"id": "b"})
+
+    assert_that(
+        Q(
+            """
+            SELECT a.*, b.*
+              FROM ({sq_a}) a,
+                   ({sq_b}) b
+            """,
+            sq_a=sq_a,
+            sq_b=sq_a,
+        ).query()
+    ).is_equal_to(
+        (
+            """
+            SELECT a.*, b.*
+              FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,
+                   (SELECT * FROM orders WHERE TRUE AND id = $1) b
+            """,
+            ["a"],
+        )
+    )
