@@ -1,6 +1,6 @@
 from assertpy import assert_that
 
-from sql_athame import SqlA, format as Q
+from sql_athame import format as Q
 
 
 def get_orders(query):
