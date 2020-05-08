@@ -64,6 +64,10 @@ class SqlA:
         ]
         return "".join(out_parts), placeholder_values
 
+    def __iter__(self) -> Iterator[Any]:
+        sql, args = self.query()
+        return iter((sql, *args))
+
     def join_parts(self, parts: List[Part]) -> Iterator[Part]:
         first = True
         for part in parts:

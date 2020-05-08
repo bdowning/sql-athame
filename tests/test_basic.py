@@ -65,6 +65,15 @@ def test_basic():
     )
 
 
+def test_iter():
+    assert_that(list(get_orders({}))).is_equal_to(
+        ["SELECT * FROM orders WHERE TRUE"]
+    )
+    assert_that(list(get_orders({"id": "xyzzy"}))).is_equal_to(
+        ["SELECT * FROM orders WHERE TRUE AND id = $1", "xyzzy"]
+    )
+
+
 def test_repeated_value_keyword():
     assert_that(Q("SELECT {a}, {b}, {a}", a="a", b="b").query()).is_equal_to(
         ("SELECT $1, $2, $1", ["a", "b"])
