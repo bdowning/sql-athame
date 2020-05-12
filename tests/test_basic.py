@@ -1,6 +1,6 @@
 from assertpy import assert_that
 
-from sql_athame import format as Q
+from sql_athame import Q
 
 
 def get_orders(query):
@@ -66,12 +66,20 @@ def test_basic():
 
 
 def test_iter():
-    assert_that(list(get_orders({}))).is_equal_to(
-        ["SELECT * FROM orders WHERE TRUE"]
-    )
+    assert_that(list(get_orders({}))).is_equal_to(["SELECT * FROM orders WHERE TRUE"])
     assert_that(list(get_orders({"id": "xyzzy"}))).is_equal_to(
         ["SELECT * FROM orders WHERE TRUE AND id = $1", "xyzzy"]
     )
+
+
+def test_all_any_list():
+    assert_that(list(Q.all([Q("a"), Q("b"), Q("c")]))).is_equal_to(
+        ["(a) AND (b) AND (c)"]
+    )
+    assert_that(list(Q.any([Q("a"), Q("b"), Q("c")]))).is_equal_to(
+        ["(a) OR (b) OR (c)"]
+    )
+    assert_that(list(Q.list([Q("a"), Q("b"), Q("c")]))).is_equal_to(["a, b, c"])
 
 
 def test_repeated_value_keyword():

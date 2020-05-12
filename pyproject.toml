@@ -7,6 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.7"
+pypika = "^0.37.6"
 
 [tool.poetry.dev-dependencies]
 assertpy = "^1.0"
@@ -15,6 +16,7 @@ isort = "^4.3"
 pytest = "^5.3.2"
 mypy = "^0.761"
 flake8 = "^3.7.9"
+ipython = "^7.14.0"
 
 [build-system]
 requires = ["poetry>=1"]

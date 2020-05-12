@@ -2,7 +2,7 @@ import dataclasses
 import operator
 import re
 import string
-from typing import Any, Dict, Iterator, List, Tuple, Union, cast
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union, cast
 
 
 @dataclasses.dataclass(eq=False)
@@ -13,7 +13,7 @@ class Placeholder:
         return f"Placeholder(id={id(self)}, name={repr(self.name)})"
 
 
-Part = Union[str, Placeholder, "SqlA"]
+Part = Union[str, Placeholder, "Fragment"]
 FlatPart = Union[str, Placeholder]
 
 
@@ -22,13 +22,13 @@ def auto_numbered(field_name):
 
 
 @dataclasses.dataclass
-class SqlA:
+class Fragment:
     parts: List[Part]
-    values: Dict[Placeholder, Any]
+    values: Dict[Placeholder, Any] = dataclasses.field(default_factory=dict)
 
     def flatten_into(self, parts: List[FlatPart], values: Dict[Placeholder, Any]):
         for part in self.parts:
-            if isinstance(part, SqlA):
+            if isinstance(part, Fragment):
                 part.flatten_into(parts, values)
             elif isinstance(part, Placeholder):
                 parts.append(part)
@@ -36,11 +36,11 @@ class SqlA:
             else:
                 parts.append(part)
 
-    def flatten(self) -> "SqlA":
+    def flatten(self) -> "Fragment":
         parts: List[FlatPart] = []
         values: Dict[Placeholder, Any] = {}
         self.flatten_into(parts, values)
-        return SqlA(cast(List[Part], parts), values)
+        return Fragment(cast(List[Part], parts), values)
 
     def query(self) -> Tuple[str, List[Any]]:
         parts: List[FlatPart] = []
@@ -68,37 +68,85 @@ class SqlA:
         sql, args = self.query()
         return iter((sql, *args))
 
-    def join_parts(self, parts: List[Part]) -> Iterator[Part]:
-        first = True
-        for part in parts:
-            if not first:
-                yield self
-            yield part
-            first = False
-
-    def join(self, parts: List[Part]):
-        return SqlA(list(self.join_parts(parts)), {})
+    def join(self, parts: List["Fragment"]):
+        return Fragment(list(join_fragments(parts, infix=self)), {})
 
 
-def format(fmt: str, *args, **kwargs):
-    fmtr = string.Formatter()
-    parts: List[Part] = []
-    values: Dict[Placeholder, Any] = {}
-    placeholders: Dict[str, Placeholder] = {}
-    next_auto_field = 0
-    for literal_text, field_name, format_spec, conversion in fmtr.parse(fmt):
-        parts.append(literal_text)
-        if field_name is not None:
-            if auto_numbered(field_name):
-                field_name = f"{next_auto_field}{field_name}"
-                next_auto_field += 1
-            value = fmtr.get_field(field_name, args, kwargs)[0]
-            if isinstance(value, SqlA):
-                parts.append(value)
-            else:
-                if field_name not in placeholders:
-                    placeholders[field_name] = Placeholder(field_name)
-                part = placeholders[field_name]
-                parts.append(part)
-                values[part] = value
-    return SqlA(parts, values)
+class Formatter:
+    def __call__(self, fmt: str, *args, **kwargs) -> Fragment:
+        fmtr = string.Formatter()
+        parts: List[Part] = []
+        values: Dict[Placeholder, Any] = {}
+        placeholders: Dict[str, Placeholder] = {}
+        next_auto_field = 0
+        for literal_text, field_name, format_spec, conversion in fmtr.parse(fmt):
+            parts.append(literal_text)
+            if field_name is not None:
+                if auto_numbered(field_name):
+                    field_name = f"{next_auto_field}{field_name}"
+                    next_auto_field += 1
+                value = fmtr.get_field(field_name, args, kwargs)[0]
+                if isinstance(value, Fragment):
+                    parts.append(value)
+                else:
+                    if field_name not in placeholders:
+                        placeholders[field_name] = Placeholder(field_name)
+                    part = placeholders[field_name]
+                    parts.append(part)
+                    values[part] = value
+        return Fragment(parts, values)
+
+    @staticmethod
+    def literal(text: str):
+        return Fragment(text, {})
+
+    @staticmethod
+    def identifier(name: str, prefix: Optional[str] = None):
+        if prefix:
+            return Q.literal(f"{quote_identifier(prefix)}.{quote_identifier(name)}")
+        else:
+            return Q.literal(f"{quote_identifier(name)}")
+
+    @staticmethod
+    def all(frags: Iterable[Fragment]) -> Fragment:
+        return Fragment(
+            join_fragments(
+                frags, prefix=Fragment("("), infix=Fragment(") AND ("), suffix=(")")
+            )
+        )
+
+    @staticmethod
+    def any(frags: Iterable[Fragment]) -> Fragment:
+        return Fragment(
+            join_fragments(
+                frags, prefix=Fragment("("), infix=Fragment(") OR ("), suffix=(")")
+            )
+        )
+
+    @staticmethod
+    def list(frags: Iterable[Fragment]) -> Fragment:
+        return Fragment(join_fragments(frags, infix=Fragment(", ")))
+
+
+Q = format = Formatter()
+
+
+def join_fragments(
+    parts: List[Fragment],
+    infix: Fragment,
+    prefix: Optional[Fragment] = None,
+    suffix: Optional[Fragment] = None,
+) -> Iterator[Fragment]:
+    if prefix:
+        yield prefix
+    for i, part in enumerate(parts):
+        if i:
+            yield infix
+        yield part
+    if suffix:
+        yield suffix
+
+
+def quote_identifier(name: str):
+    quoted = name.replace('"', '""')
+    return f'"{quoted}"'
