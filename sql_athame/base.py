@@ -72,7 +72,7 @@ class Fragment:
         return Fragment(list(join_fragments(parts, infix=self)), {})
 
 
-class Formatter:
+class SQLFormatter:
     def __call__(self, fmt: str, *args, **kwargs) -> Fragment:
         fmtr = string.Formatter()
         parts: List[Part] = []
@@ -98,37 +98,42 @@ class Formatter:
 
     @staticmethod
     def literal(text: str):
-        return Fragment(text, {})
+        return Fragment(text)
 
     @staticmethod
     def identifier(name: str, prefix: Optional[str] = None):
         if prefix:
-            return Q.literal(f"{quote_identifier(prefix)}.{quote_identifier(name)}")
+            return Fragment(f"{quote_identifier(prefix)}.{quote_identifier(name)}")
         else:
-            return Q.literal(f"{quote_identifier(name)}")
+            return Fragment(f"{quote_identifier(name)}")
 
     @staticmethod
     def all(frags: Iterable[Fragment]) -> Fragment:
-        return Fragment(
-            join_fragments(
-                frags, prefix=Fragment("("), infix=Fragment(") AND ("), suffix=(")")
-            )
+        frags = list(frags)
+        if not frags:
+            return Fragment("TRUE")
+        parts = join_fragments(
+            frags, prefix=Fragment("("), infix=Fragment(") AND ("), suffix=Fragment(")")
         )
+        return Fragment(list(parts))
 
     @staticmethod
     def any(frags: Iterable[Fragment]) -> Fragment:
-        return Fragment(
-            join_fragments(
-                frags, prefix=Fragment("("), infix=Fragment(") OR ("), suffix=(")")
-            )
+        frags = list(frags)
+        if not frags:
+            return Fragment("FALSE")
+        parts = join_fragments(
+            frags, prefix=Fragment("("), infix=Fragment(") OR ("), suffix=Fragment(")")
         )
+        return Fragment(list(parts))
 
     @staticmethod
     def list(frags: Iterable[Fragment]) -> Fragment:
-        return Fragment(join_fragments(frags, infix=Fragment(", ")))
+        parts = join_fragments(frags, infix=Fragment(", "))
+        return Fragment(list(parts))
 
 
-Q = format = Formatter()
+sql = SQLFormatter()
 
 
 def join_fragments(

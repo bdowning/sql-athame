@@ -1,23 +1,23 @@
 from assertpy import assert_that
 
-from sql_athame import Q
+from sql_athame import sql
 
 
 def get_orders(query):
-    where = [Q("TRUE")]
+    where = [sql("TRUE")]
 
     if "id" in query:
-        where.append(Q("id = {}", query["id"]))
+        where.append(sql("id = {}", query["id"]))
     if "eventId" in query:
-        where.append(Q("event_id = {}", query["eventId"]))
+        where.append(sql("event_id = {}", query["eventId"]))
     if "startTime" in query:
-        where.append(Q("start_time = {}", query["startTime"]))
+        where.append(sql("start_time = {}", query["startTime"]))
     if "from" in query:
-        where.append(Q("start_time >= {}", query["from"]))
+        where.append(sql("start_time >= {}", query["from"]))
     if "until" in query:
-        where.append(Q("start_time < {}", query["until"]))
+        where.append(sql("start_time < {}", query["until"]))
 
-    return Q("SELECT * FROM orders WHERE {}", Q(" AND ").join(where))
+    return sql("SELECT * FROM orders WHERE {}", sql(" AND ").join(where))
 
 
 def test_basic():
@@ -39,7 +39,7 @@ def test_basic():
     )
 
     assert_that(
-        Q(
+        sql(
             """
             SELECT *
               FROM ({subquery}) sq
@@ -73,17 +73,17 @@ def test_iter():
 
 
 def test_all_any_list():
-    assert_that(list(Q.all([Q("a"), Q("b"), Q("c")]))).is_equal_to(
+    assert_that(list(sql.all([sql("a"), sql("b"), sql("c")]))).is_equal_to(
         ["(a) AND (b) AND (c)"]
     )
-    assert_that(list(Q.any([Q("a"), Q("b"), Q("c")]))).is_equal_to(
+    assert_that(list(sql.any([sql("a"), sql("b"), sql("c")]))).is_equal_to(
         ["(a) OR (b) OR (c)"]
     )
-    assert_that(list(Q.list([Q("a"), Q("b"), Q("c")]))).is_equal_to(["a, b, c"])
+    assert_that(list(sql.list([sql("a"), sql("b"), sql("c")]))).is_equal_to(["a, b, c"])
 
 
 def test_repeated_value_keyword():
-    assert_that(Q("SELECT {a}, {b}, {a}", a="a", b="b").query()).is_equal_to(
+    assert_that(sql("SELECT {a}, {b}, {a}", a="a", b="b").query()).is_equal_to(
         ("SELECT $1, $2, $1", ["a", "b"])
     )
 
@@ -93,7 +93,7 @@ def test_repeated_value_nested():
     sq_b = get_orders({"id": "b"})
 
     assert_that(
-        Q(
+        sql(
             """
             SELECT a.*, b.*
               FROM ({sq_a}) a,
@@ -117,7 +117,7 @@ def test_repeated_value_nested():
     sq_b = get_orders({"id": "b"})
 
     assert_that(
-        Q(
+        sql(
             """
             SELECT a.*, b.*
               FROM ({sq_a}) a,
@@ -135,4 +135,19 @@ def test_repeated_value_nested():
             """,
             ["a"],
         )
+    )
+
+
+def test_any_all():
+    assert_that(list(sql.all([]))).is_equal_to(["TRUE"])
+    assert_that(list(sql.any([]))).is_equal_to(["FALSE"])
+
+    assert_that(list(sql.all([sql("a")]))).is_equal_to(["(a)"])
+    assert_that(list(sql.any([sql("a")]))).is_equal_to(["(a)"])
+
+    assert_that(list(sql.all([sql("a"), sql("b"), sql("c")]))).is_equal_to(
+        ["(a) AND (b) AND (c)"]
+    )
+    assert_that(list(sql.any([sql("a"), sql("b"), sql("c")]))).is_equal_to(
+        ["(a) OR (b) OR (c)"]
     )
