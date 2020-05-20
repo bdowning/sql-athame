@@ -111,7 +111,7 @@ class ModelBase:
         return sql(
             "SELECT {fields} FROM {name} WHERE {where}",
             fields=sql.list(cls.field_names_sql()),
-            name=cls.table_name(),
+            name=cls.table_name_sql(),
             where=where,
         )
 

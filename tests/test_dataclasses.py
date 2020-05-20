@@ -34,6 +34,13 @@ def test_modelclass():
             'CREATE TABLE IF NOT EXISTS "table" ("foo" INTEGER NOT NULL, "bar" TEXT NOT NULL)'
         ]
     )
+    assert_that(list(Test.select_sql())).is_equal_to(
+        ['SELECT "foo", "bar" FROM "table" WHERE TRUE']
+    )
+    assert_that(list(t.insert_sql())).is_equal_to(
+        ['INSERT INTO "table" ("foo", "bar") VALUES ($1, $2)', 42, "hi"]
+    )
+
     assert_that(
         sql(
             "INSERT INTO table ({}) VALUES ({})",
