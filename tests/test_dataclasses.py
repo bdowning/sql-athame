@@ -1,7 +1,8 @@
 import dataclasses
 import uuid
-from assertpy import assert_that
 from typing import Optional
+
+from assertpy import assert_that
 
 from sql_athame import sql
 from sql_athame.dataclasses import ModelBase, model_field

@@ -2,8 +2,7 @@ import datetime
 import itertools
 import typing
 import uuid
-
-from dataclasses import dataclass, fields, field, MISSING
+from dataclasses import MISSING, dataclass, field, fields
 
 from .base import Fragment, sql
 
@@ -22,13 +21,13 @@ sql_type_map = {
     int: "INTEGER NOT NULL",
     str: "TEXT NOT NULL",
     uuid.UUID: "UUID NOT NULL",
-    (typing.Union, (bool, NoneType)): "BOOLEAN",
-    (typing.Union, (datetime.date, NoneType)): "DATE",
-    (typing.Union, (datetime.datetime, NoneType)): "TIMESTAMP",
-    (typing.Union, (float, NoneType)): "DOUBLE PRECISION",
-    (typing.Union, (int, NoneType)): "INTEGER",
-    (typing.Union, (str, NoneType)): "TEXT",
-    (typing.Union, (uuid.UUID, NoneType)): "UUID",
+    (typing.Union, (bool, NoneType)): "BOOLEAN",  # type: ignore
+    (typing.Union, (datetime.date, NoneType)): "DATE",  # type: ignore
+    (typing.Union, (datetime.datetime, NoneType)): "TIMESTAMP",  # type: ignore
+    (typing.Union, (float, NoneType)): "DOUBLE PRECISION",  # type: ignore
+    (typing.Union, (int, NoneType)): "INTEGER",  # type: ignore
+    (typing.Union, (str, NoneType)): "TEXT",  # type: ignore
+    (typing.Union, (uuid.UUID, NoneType)): "UUID",  # type: ignore
 }
 
 
@@ -116,9 +115,16 @@ class ModelBase:
         )
 
     @classmethod
-    async def select(cls, connection, where=()):
+    async def select_cursor(cls, connection, where=()):
         async for row in connection.cursor(*cls.select_sql(where=where)):
             yield cls(*row)
+
+    @classmethod
+    async def select(cls, connection_or_pool, where=()):
+        return [
+            cls(*row)
+            for row in await connection_or_pool.fetch(*cls.select_sql(where=where))
+        ]
 
     def insert_sql(self, exclude=()):
         return sql(

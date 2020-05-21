@@ -98,46 +98,47 @@ class SQLFormatter:
 
     @staticmethod
     def literal(text: str):
-        return Fragment(text)
+        return Fragment([text])
 
     @staticmethod
     def identifier(name: str, prefix: Optional[str] = None):
         if prefix:
-            return Fragment(f"{quote_identifier(prefix)}.{quote_identifier(name)}")
+            return lit(f"{quote_identifier(prefix)}.{quote_identifier(name)}")
         else:
-            return Fragment(f"{quote_identifier(name)}")
+            return lit(f"{quote_identifier(name)}")
 
     @staticmethod
     def all(frags: Iterable[Fragment]) -> Fragment:
-        frags = list(frags)
-        if not frags:
-            return Fragment("TRUE")
-        parts = join_fragments(
-            frags, prefix=Fragment("("), infix=Fragment(") AND ("), suffix=Fragment(")")
-        )
-        return Fragment(list(parts))
+        return any_all(list(frags), "AND", "TRUE")
 
     @staticmethod
     def any(frags: Iterable[Fragment]) -> Fragment:
-        frags = list(frags)
-        if not frags:
-            return Fragment("FALSE")
-        parts = join_fragments(
-            frags, prefix=Fragment("("), infix=Fragment(") OR ("), suffix=Fragment(")")
-        )
-        return Fragment(list(parts))
+        return any_all(list(frags), "OR", "FALSE")
 
     @staticmethod
     def list(frags: Iterable[Fragment]) -> Fragment:
-        parts = join_fragments(frags, infix=Fragment(", "))
+        parts = join_fragments(frags, infix=lit(", "))
         return Fragment(list(parts))
 
 
 sql = SQLFormatter()
 
 
+def lit(text: str):
+    return Fragment([text])
+
+
+def any_all(frags: List[Fragment], op: str, base_case: str):
+    if not frags:
+        return lit(base_case)
+    parts = join_fragments(
+        frags, prefix=lit("("), infix=lit(f") {op} ("), suffix=lit(")")
+    )
+    return Fragment(list(parts))
+
+
 def join_fragments(
-    parts: List[Fragment],
+    parts: Iterable[Fragment],
     infix: Fragment,
     prefix: Optional[Fragment] = None,
     suffix: Optional[Fragment] = None,
