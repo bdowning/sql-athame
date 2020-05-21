@@ -47,11 +47,15 @@ class ModelBase:
 
     @classmethod
     def primary_keys(cls):
-        return cls.Meta.primary_keys
+        return getattr(cls.Meta, "primary_keys", ())
 
     @classmethod
     def table_name_sql(cls, *, prefix=None):
-        return sql.identifier(cls.Meta.table_name, prefix=prefix)
+        return sql.identifier(cls.table_name(), prefix=prefix)
+
+    @classmethod
+    def primary_keys_sql(cls, *, prefix=None):
+        return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_keys()]
 
     @classmethod
     def field_names(cls, *, exclude=()):
@@ -93,14 +97,16 @@ class ModelBase:
 
     @classmethod
     def create_table_sql(cls):
-        columns = (
+        entries = [
             sql("{} {}", sql.identifier(f.name), sql.literal(sql_for_field(f)))
             for f in fields(cls)
-        )
+        ]
+        if cls.primary_keys():
+            entries += [sql("PRIMARY KEY ({})", sql.list(cls.primary_keys_sql()))]
         return sql(
-            "CREATE TABLE IF NOT EXISTS {table} ({columns})",
+            "CREATE TABLE IF NOT EXISTS {table} ({entries})",
             table=cls.table_name_sql(),
-            columns=sql.list(columns),
+            entries=sql.list(entries),
         )
 
     @classmethod
@@ -141,7 +147,7 @@ class ModelBase:
         return sql(
             "{insert_sql} ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
             insert_sql=self.insert_sql(exclude=exclude),
-            pks=sql.list(sql.identifier(x) for x in self.primary_keys()),
+            pks=sql.list(self.primary_keys_sql()),
             assignments=sql.list(
                 sql("{field}=EXCLUDED.{field}", field=x)
                 for x in self.field_names_sql(exclude=(*self.primary_keys(), *exclude))

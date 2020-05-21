@@ -56,6 +56,7 @@ def test_modelclass_implicit_types():
     class Test(ModelBase):
         class Meta:
             table_name = "table"
+            primary_keys = ("foo",)
 
         foo: int
         bar: str
@@ -63,7 +64,11 @@ def test_modelclass_implicit_types():
 
     assert_that(list(Test.create_table_sql())).is_equal_to(
         [
-            'CREATE TABLE IF NOT EXISTS "table" ("foo" INTEGER NOT NULL, "bar" TEXT NOT NULL, "baz" UUID)'
+            'CREATE TABLE IF NOT EXISTS "table" ('
+            '"foo" INTEGER NOT NULL, '
+            '"bar" TEXT NOT NULL, '
+            '"baz" UUID, '
+            'PRIMARY KEY ("foo"))'
         ]
     )
 
