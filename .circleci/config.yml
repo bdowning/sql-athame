@@ -1,0 +1,32 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@0.2.1
+
+jobs:
+  build-and-test:
+    executor: python/default
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - poetry-{{ checksum "poetry.lock" }}
+      - run: poetry install
+      - save_cache:
+          key: poetry-{{ checksum "poetry.lock" }}
+          paths:
+            - .venv
+      - run: poetry run pytest
+      - run: poetry run mypy sql_athame/*.py tests/*.py
+      - run: poetry run black --check sql_athame tests
+      - run: poetry run isort --check-only sql_athame/**.py tests/**.py
+      - store_test_results:
+          path: results
+      - store_artifacts:
+          path: results/pytest/cov_html
+          destination: pytest-coverage
+
+workflows:
+  main:
+    jobs:
+      - build-and-test

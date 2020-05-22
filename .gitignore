@@ -2,3 +2,6 @@
 .*_cache
 .venv
 __pycache__
+.coverage
+/dist
+/results
