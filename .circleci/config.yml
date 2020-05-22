@@ -36,7 +36,7 @@ jobs:
       - checkout
       - attach_workspace:
           at: ./dist
-      - run: poetry publish --repository testpypi
+      - run: poetry publish
 
 workflows:
   main:
