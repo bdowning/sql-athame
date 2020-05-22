@@ -16,6 +16,10 @@ lint() {
     poetry run isort --check-only sql_athame/**.py tests/**.py
 }
 
+bump2version() {
+    poetry run bump2version "$@"
+}
+
 cmd=$1
 shift
 
