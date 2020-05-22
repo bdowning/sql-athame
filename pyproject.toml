@@ -7,9 +7,6 @@ license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/bdowning/sql-athame"
 repository = "https://github.com/bdowning/sql-athame"
-include = [
-    "LICENSE",
-]
 
 [tool.poetry.dependencies]
 python = "^3.7"
