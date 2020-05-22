@@ -1,5 +1,4 @@
 import datetime
-import itertools
 import typing
 import uuid
 from dataclasses import MISSING, dataclass, field, fields
@@ -84,14 +83,12 @@ class ModelBase:
     @classmethod
     def from_tuple(cls, tup, *, offset=0, exclude=()):
         names = (f.name for f in fields(cls) if f.name not in exclude)
-        kwargs = {
-            name: tup[offset] for offset, name in zip(itertools.count(offset), names)
-        }
+        kwargs = {name: tup[offset] for offset, name in enumerate(names, start=offset)}
         return cls(**kwargs)
 
     @classmethod
     def from_dict(cls, dct, *, exclude=()):
-        names = (f.name for f in fields(cls) if f.name not in exclude)
+        names = {f.name for f in fields(cls) if f.name not in exclude}
         kwargs = {k: v for k, v in dct.items() if k in names}
         return cls(**kwargs)
 
