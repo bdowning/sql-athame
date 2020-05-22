@@ -1,11 +1,9 @@
 version: 2.1
 
-orbs:
-  python: circleci/python@0.2.1
-
 jobs:
   build-and-test:
-    executor: python/default
+    docker:
+      - image: circleci/python:latest
     steps:
       - checkout
       - restore_cache:
@@ -26,8 +24,29 @@ jobs:
       - store_artifacts:
           path: results/pytest/cov_html
           destination: pytest-coverage
+      - run: poetry build
+      - persist_to_workspace:
+          root: ./dist
+          paths:
+            - "*"
+  publish:
+    docker:
+      - image: circleci/python:latest
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ./dist
+      - run: poetry publish --repository testpypi
 
 workflows:
   main:
     jobs:
       - build-and-test
+      - publish:
+          requires:
+            - build-and-test
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
