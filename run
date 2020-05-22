@@ -1,0 +1,24 @@
+#!/bin/bash
+
+tests() {
+    poetry run pytest
+}
+
+refmt() {
+    poetry run isort sql_athame/**.py tests/**.py
+    poetry run black sql_athame tests
+}
+
+lint() {
+    poetry run flake8 sql_athame tests
+    poetry run mypy sql_athame/**.py tests/**.py
+    poetry run black --check sql_athame tests
+    poetry run isort --check-only sql_athame/**.py tests/**.py
+}
+
+cmd=$1
+shift
+
+set -o xtrace
+
+"$cmd" "$@"

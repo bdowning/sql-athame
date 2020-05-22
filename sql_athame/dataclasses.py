@@ -1,7 +1,7 @@
 import datetime
 import typing
 import uuid
-from dataclasses import MISSING, dataclass, field, fields
+from dataclasses import field, fields
 
 from .base import Fragment, sql
 
