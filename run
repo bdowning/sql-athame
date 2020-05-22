@@ -1,14 +1,19 @@
 #!/bin/bash
 
+usage=()
+
+usage+=("  $0 tests - run tests")
 tests() {
     poetry run pytest
 }
 
+usage+=("  $0 refmt - reformat code")
 refmt() {
     poetry run isort sql_athame/**.py tests/**.py
     poetry run black sql_athame tests
 }
 
+usage+=("  $0 lint - run linting")
 lint() {
     poetry run flake8 sql_athame tests
     poetry run mypy sql_athame/**.py tests/**.py
@@ -16,12 +21,19 @@ lint() {
     poetry run isort --check-only sql_athame/**.py tests/**.py
 }
 
+usage+=("  $0 bump2version {major|minor|patch} - bump version number")
 bump2version() {
     poetry run bump2version "$@"
 }
 
 cmd=$1
 shift
+
+if ! declare -f "$cmd" >/dev/null; then
+    echo "Usage:"
+    for line in "${usage[@]}"; do echo "$line"; done
+    exit 1
+fi
 
 set -o xtrace
 
