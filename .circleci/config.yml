@@ -17,7 +17,8 @@ jobs:
           paths:
             - .venv
       - run: poetry run pytest
-      - run: poetry run mypy sql_athame/*.py tests/*.py
+      - run: poetry run flake8 sql_athame tests
+      - run: poetry run mypy sql_athame/**.py tests/**.py
       - run: poetry run black --check sql_athame tests
       - run: poetry run isort --check-only sql_athame/**.py tests/**.py
       - store_test_results:
