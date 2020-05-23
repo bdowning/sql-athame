@@ -102,26 +102,32 @@ class ModelBase:
         )
 
     @classmethod
-    def select_sql(cls, where=()):
+    def select_sql(cls, for_update=False, where=()):
         if not isinstance(where, Fragment):
             where = sql.all(where)
+        stmt = sql("SELECT FOR UPDATE") if for_update else sql("SELECT")
         return sql(
-            "SELECT {fields} FROM {name} WHERE {where}",
+            "{stmt} {fields} FROM {name} WHERE {where}",
+            stmt=stmt,
             fields=sql.list(cls.field_names_sql()),
             name=cls.table_name_sql(),
             where=where,
         )
 
     @classmethod
-    async def select_cursor(cls, connection, where=()):
-        async for row in connection.cursor(*cls.select_sql(where=where)):
+    async def select_cursor(cls, connection, for_update=False, where=()):
+        async for row in connection.cursor(
+            *cls.select_sql(for_update=for_update, where=where)
+        ):
             yield cls(*row)
 
     @classmethod
-    async def select(cls, connection_or_pool, where=()):
+    async def select(cls, connection_or_pool, for_update=False, where=()):
         return [
             cls(*row)
-            for row in await connection_or_pool.fetch(*cls.select_sql(where=where))
+            for row in await connection_or_pool.fetch(
+                *cls.select_sql(for_update=for_update, where=where)
+            )
         ]
 
     def insert_sql(self, exclude=()):
