@@ -4,6 +4,10 @@ jobs:
   build-and-test:
     docker:
       - image: circleci/python:latest
+      - image: postgres:12
+        environment:
+          POSTGRES_PASSWORD: password
+
     steps:
       - checkout
       - restore_cache:
@@ -14,21 +18,36 @@ jobs:
           key: poetry-{{ checksum "poetry.lock" }}
           paths:
             - .venv
-      - run: poetry run pytest
-      - run: poetry run flake8 sql_athame tests
-      - run: poetry run mypy sql_athame/**.py tests/**.py
-      - run: poetry run black --check sql_athame tests
-      - run: poetry run isort --check-only sql_athame/**.py tests/**.py
+
+      - run:
+          command: poetry run flake8 sql_athame tests
+          when: always
+      - run:
+          command: poetry run mypy sql_athame/**.py tests/**.py
+          when: always
+      - run:
+          command: poetry run black --check sql_athame tests
+          when: always
+      - run:
+          command: poetry run isort --check-only sql_athame/**.py tests/**.py
+          when: always
+      - run:
+          command: poetry run pytest
+          when: always
+
       - store_test_results:
           path: results
       - store_artifacts:
           path: results/pytest/cov_html
           destination: pytest-coverage
+
       - run: poetry build
+
       - persist_to_workspace:
           root: ./dist
           paths:
             - "*"
+
   publish:
     docker:
       - image: circleci/python:latest

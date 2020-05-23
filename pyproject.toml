@@ -8,8 +8,12 @@ readme = "README.md"
 homepage = "https://github.com/bdowning/sql-athame"
 repository = "https://github.com/bdowning/sql-athame"
 
+[tool.poetry.extras]
+asyncpg = ["asyncpg"]
+
 [tool.poetry.dependencies]
 python = "^3.7"
+asyncpg = { version = "*", optional = true }
 
 [tool.poetry.dev-dependencies]
 assertpy = "*"
@@ -21,6 +25,8 @@ flake8 = "*"
 ipython = "*"
 pytest-cov = "*"
 bump2version = "*"
+asyncpg = "*"
+pytest-asyncio = "*"
 
 [build-system]
 requires = ["poetry>=0.12"]
