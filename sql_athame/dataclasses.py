@@ -1,7 +1,7 @@
 import datetime
-import typing
 import uuid
 from dataclasses import field, fields
+from typing import Optional
 
 from .base import Fragment, sql
 
@@ -10,9 +10,14 @@ def model_field(*, sql, **kwargs):
     return field(**kwargs, metadata={"sql": sql})
 
 
-NoneType = type(None)
-
 sql_type_map = {
+    Optional[bool]: "BOOLEAN",
+    Optional[datetime.date]: "DATE",
+    Optional[datetime.datetime]: "TIMESTAMP",
+    Optional[float]: "DOUBLE PRECISION",
+    Optional[int]: "INTEGER",
+    Optional[str]: "TEXT",
+    Optional[uuid.UUID]: "UUID",
     bool: "BOOLEAN NOT NULL",
     datetime.date: "DATE NOT NULL",
     datetime.datetime: "TIMESTAMP NOT NULL",
@@ -20,23 +25,13 @@ sql_type_map = {
     int: "INTEGER NOT NULL",
     str: "TEXT NOT NULL",
     uuid.UUID: "UUID NOT NULL",
-    (typing.Union, (bool, NoneType)): "BOOLEAN",  # type: ignore
-    (typing.Union, (datetime.date, NoneType)): "DATE",  # type: ignore
-    (typing.Union, (datetime.datetime, NoneType)): "TIMESTAMP",  # type: ignore
-    (typing.Union, (float, NoneType)): "DOUBLE PRECISION",  # type: ignore
-    (typing.Union, (int, NoneType)): "INTEGER",  # type: ignore
-    (typing.Union, (str, NoneType)): "TEXT",  # type: ignore
-    (typing.Union, (uuid.UUID, NoneType)): "UUID",  # type: ignore
 }
 
 
 def sql_for_field(field):
-    if field.metadata and "sql" in field.metadata:
-        return field.metadata["sql"]
-    type_key = field.type
-    if typing.get_origin(field.type) is not None:
-        type_key = (typing.get_origin(field.type), typing.get_args(field.type))
-    return sql_type_map[type_key]
+    if field.metadata and "sql_type" in field.metadata:
+        return field.metadata["sql_type"]
+    return sql_type_map[field.type]
 
 
 class ModelBase:
