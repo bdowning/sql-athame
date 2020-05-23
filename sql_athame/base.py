@@ -125,6 +125,11 @@ class SQLFormatter:
         parts = join_fragments(frags, infix=lit(", "))
         return Fragment(list(parts))
 
+    @staticmethod
+    def unnest(data: List[List[Any]], types: List[str]) -> Fragment:
+        nested = (sql("{}:{}[]", x, lit(t)) for x, t in zip(zip(*data), types))
+        return sql("UNNEST({})", sql.list(nested))
+
 
 sql = SQLFormatter()
 
