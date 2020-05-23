@@ -14,8 +14,8 @@ def test_modelclass():
         class Meta:
             table_name = "table"
 
-        foo: int = model_field(sql="INTEGER NOT NULL")
-        bar: str = model_field(default="hi", sql="TEXT NOT NULL")
+        foo: int = model_field(type="INTEGER", constraints="NOT NULL")
+        bar: str = model_field(default="hi", type="TEXT", constraints="NOT NULL")
 
     t = Test(42)
 

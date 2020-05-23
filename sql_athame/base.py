@@ -2,7 +2,18 @@ import dataclasses
 import operator
 import re
 import string
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union, cast
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 
 
 @dataclasses.dataclass(eq=False)
@@ -126,7 +137,7 @@ class SQLFormatter:
         return Fragment(list(parts))
 
     @staticmethod
-    def unnest(data: List[List[Any]], types: List[str]) -> Fragment:
+    def unnest(data: Iterable[Sequence[Any]], types: Iterable[str]) -> Fragment:
         nested = (sql("{}:{}[]", x, lit(t)) for x, t in zip(zip(*data), types))
         return sql("UNNEST({})", sql.list(nested))
 

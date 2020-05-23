@@ -151,3 +151,11 @@ def test_any_all():
     assert_that(list(sql.any([sql("a"), sql("b"), sql("c")]))).is_equal_to(
         ["(a) OR (b) OR (c)"]
     )
+
+
+def test_unnest():
+    data = [[1, "foo"], [2, "bar"]]
+    query = sql.unnest(data, ("INTEGER", "TEXT"))
+    assert_that(list(query)).is_equal_to(
+        ["UNNEST($1:INTEGER[], $2:TEXT[])", (1, 2), ("foo", "bar")]
+    )

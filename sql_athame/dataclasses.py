@@ -1,40 +1,61 @@
 import datetime
 import uuid
-from dataclasses import field, fields
-from typing import Optional
+from dataclasses import dataclass, field, fields
+from typing import List, Optional
 
 from .base import Fragment, sql
 
 
-def model_field(*, sql, **kwargs):
-    return field(**kwargs, metadata={"sql": sql})
+@dataclass
+class ColumnInfo:
+    type: str
+    constraints: List[str]
+
+    def create_table_string(self):
+        return " ".join((self.type, *self.constraints))
+
+
+def model_field(*, type, constraints=(), **kwargs):
+    if isinstance(constraints, str):
+        constraints = (constraints,)
+    info = ColumnInfo(type, constraints)
+    return field(**kwargs, metadata={"sql_athame": info})
 
 
 sql_type_map = {
-    Optional[bool]: "BOOLEAN",
-    Optional[datetime.date]: "DATE",
-    Optional[datetime.datetime]: "TIMESTAMP",
-    Optional[float]: "DOUBLE PRECISION",
-    Optional[int]: "INTEGER",
-    Optional[str]: "TEXT",
-    Optional[uuid.UUID]: "UUID",
-    bool: "BOOLEAN NOT NULL",
-    datetime.date: "DATE NOT NULL",
-    datetime.datetime: "TIMESTAMP NOT NULL",
-    float: "DOUBLE PRECISION NOT NULL",
-    int: "INTEGER NOT NULL",
-    str: "TEXT NOT NULL",
-    uuid.UUID: "UUID NOT NULL",
+    Optional[bool]: ("BOOLEAN",),
+    Optional[datetime.date]: ("DATE",),
+    Optional[datetime.datetime]: ("TIMESTAMP",),
+    Optional[float]: ("DOUBLE PRECISION",),
+    Optional[int]: ("INTEGER",),
+    Optional[str]: ("TEXT",),
+    Optional[uuid.UUID]: ("UUID",),
+    bool: ("BOOLEAN", "NOT NULL"),
+    datetime.date: ("DATE", "NOT NULL"),
+    datetime.datetime: ("TIMESTAMP", "NOT NULL"),
+    float: ("DOUBLE PRECISION", "NOT NULL"),
+    int: ("INTEGER", "NOT NULL"),
+    str: ("TEXT", "NOT NULL"),
+    uuid.UUID: ("UUID", "NOT NULL"),
 }
 
 
-def sql_for_field(field):
-    if field.metadata and "sql_type" in field.metadata:
-        return field.metadata["sql_type"]
-    return sql_type_map[field.type]
+def column_info_for_field(field):
+    if "sql_athame" in field.metadata:
+        return field.metadata["sql_athame"]
+    type, *constraints = sql_type_map[field.type]
+    return ColumnInfo(type, constraints)
 
 
 class ModelBase:
+    @classmethod
+    def column_info(cls):
+        try:
+            return cls._column_info
+        except AttributeError:
+            cls._column_info = {f.name: column_info_for_field(f) for f in fields(cls)}
+            return cls._column_info
+
     @classmethod
     def table_name(cls):
         return cls.Meta.table_name
@@ -89,8 +110,13 @@ class ModelBase:
 
     @classmethod
     def create_table_sql(cls):
+        column_info = cls.column_info()
         entries = [
-            sql("{} {}", sql.identifier(f.name), sql.literal(sql_for_field(f)))
+            sql(
+                "{} {}",
+                sql.identifier(f.name),
+                sql.literal(column_info[f.name].create_table_string()),
+            )
             for f in fields(cls)
         ]
         if cls.primary_keys():
