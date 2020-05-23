@@ -66,12 +66,12 @@ class ModelBase:
 
             def field_value(name):
                 value = getattr(self, name)
-                return sql.literal("DEFAULT") if value is None else sql("{}", value)
+                return sql.literal("DEFAULT") if value is None else sql.value(value)
 
         else:
 
             def field_value(name):
-                return sql("{}", getattr(self, name))
+                return sql.value(getattr(self, name))
 
         return [field_value(f.name) for f in fields(self) if f.name not in exclude]
 

@@ -97,6 +97,11 @@ class SQLFormatter:
         return Fragment(parts, values)
 
     @staticmethod
+    def value(value: Any):
+        placeholder = Placeholder("value")
+        return Fragment([placeholder], {placeholder: value})
+
+    @staticmethod
     def literal(text: str):
         return Fragment([text])
 
