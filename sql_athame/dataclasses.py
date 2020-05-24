@@ -48,6 +48,15 @@ def column_info_for_field(field):
 
 
 class ModelBase:
+    def keys(self):
+        return self.field_names()
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def get(self, key, default):
+        return getattr(self, key, default)
+
     @classmethod
     def column_info(cls):
         try:
