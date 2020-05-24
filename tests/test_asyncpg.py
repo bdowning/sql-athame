@@ -50,7 +50,7 @@ async def test_select(conn, tables):
 
 
 @pytest.mark.asyncio
-async def test_replace_multiple(conn):
+async def test_replace_multiple(conn) -> None:
     @dataclass(order=True)
     class Test(ModelBase):
         class Meta:
