@@ -251,25 +251,21 @@ class ModelBase:
 
     @classmethod
     async def replace_multiple(cls, connection, rows, *, where, ignore=()):
-        old = {
-            row.primary_key(): row
-            async for row in cls.select_cursor(connection, where=where, for_update=True)
-        }
-        new = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
+        pending = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
 
-        pks = set((*old.keys(), *new.keys()))
-
-        created = []
         updated = []
         deleted = []
 
-        for pk in pks:
-            if pk not in old:
-                created.append(new[pk])
-            elif pk not in new:
-                deleted.append(old[pk])
-            elif not equal_ignoring(old[pk], new[pk], ignore):
-                updated.append(new[pk])
+        async for old in cls.select_cursor(connection, where=where, for_update=True):
+            pk = old.primary_key()
+            if pk not in pending:
+                deleted.append(old)
+            else:
+                if not equal_ignoring(old, pending[pk], ignore):
+                    updated.append(pending[pk])
+                del pending[pk]
+
+        created = list(pending.values())
 
         if created or updated:
             await cls.upsert_multiple(connection, (*created, *updated))
