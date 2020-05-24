@@ -252,7 +252,7 @@ class ModelBase:
             row.primary_key(): row
             async for row in cls.select_cursor(connection, where=where, for_update=True)
         }
-        new = {row.primary_key(): cls.ensure_model(row) for row in rows}
+        new = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
 
         pks = set((*old.keys(), *new.keys()))
 
