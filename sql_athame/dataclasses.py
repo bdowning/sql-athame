@@ -137,17 +137,18 @@ class ModelBase:
         )
 
     @classmethod
-    def select_sql(cls, for_update=False, where=()):
+    def select_sql(cls, where=(), for_update=False):
         if not isinstance(where, Fragment):
             where = sql.all(where)
-        stmt = sql("SELECT FOR UPDATE") if for_update else sql("SELECT")
-        return sql(
-            "{stmt} {fields} FROM {name} WHERE {where}",
-            stmt=stmt,
+        query = sql(
+            "SELECT {fields} FROM {name} WHERE {where}",
             fields=sql.list(cls.field_names_sql()),
             name=cls.table_name_sql(),
             where=where,
         )
+        if for_update:
+            query = sql("{} FOR UPDATE", query)
+        return query
 
     @classmethod
     async def select_cursor(cls, connection, for_update=False, where=()):
