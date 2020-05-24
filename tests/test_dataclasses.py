@@ -86,7 +86,7 @@ def test_upsert():
 
     t = Test(1, 42, "str")
 
-    assert_that(list(t.upsert_sql())).is_equal_to(
+    assert_that(list(t.upsert_sql(t.insert_sql()))).is_equal_to(
         [
             'INSERT INTO "table" ("id", "foo", "bar") VALUES ($1, $2, $3) '
             'ON CONFLICT ("id") DO UPDATE SET "foo"=EXCLUDED."foo", "bar"=EXCLUDED."bar"',
