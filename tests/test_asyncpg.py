@@ -68,16 +68,14 @@ async def test_replace_multiple(conn):
         Test(2, 1, "bar"),
         Test(3, 2, "quux"),
     ]
-    for d in data:
-        await d.insert(conn)
+    await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
     assert_that(c and u).is_false()
     assert_that(d).is_length(3)
     assert_that(await Test.select(conn)).is_empty()
 
-    for d in data:
-        await d.insert(conn)
+    await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=sql("a = 1"))
     assert_that(c and u).is_false()
@@ -85,9 +83,7 @@ async def test_replace_multiple(conn):
     assert_that([x.id for x in await Test.select(conn)]).is_equal_to([3])
 
     await conn.execute("DELETE FROM test")
-
-    for d in data:
-        await d.insert(conn)
+    await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(
         conn, [Test(1, 5, "apples"), Test(4, 6, "fred")], where=sql("a = 1")
