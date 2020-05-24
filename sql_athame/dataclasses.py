@@ -48,6 +48,15 @@ def column_info_for_field(field):
 
 
 class ModelBase:
+    def keys(self):
+        return self.field_names()
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def get(self, key, default):
+        return getattr(self, key, default)
+
     @classmethod
     def column_info(cls):
         try:
@@ -61,7 +70,7 @@ class ModelBase:
         return cls.Meta.table_name
 
     @classmethod
-    def primary_keys(cls):
+    def primary_key_names(cls):
         return getattr(cls.Meta, "primary_keys", ())
 
     @classmethod
@@ -69,8 +78,8 @@ class ModelBase:
         return sql.identifier(cls.table_name(), prefix=prefix)
 
     @classmethod
-    def primary_keys_sql(cls, *, prefix=None):
-        return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_keys()]
+    def primary_key_names_sql(cls, *, prefix=None):
+        return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_key_names()]
 
     @classmethod
     def field_names(cls, *, exclude=()):
@@ -81,6 +90,12 @@ class ModelBase:
         return [
             sql.identifier(f, prefix=prefix) for f in cls.field_names(exclude=exclude)
         ]
+
+    def primary_key(self):
+        return tuple(getattr(self, pk) for pk in self.primary_key_names())
+
+    def field_values(self, *, exclude=()):
+        return [getattr(self, f.name) for f in fields(self) if f.name not in exclude]
 
     def field_values_sql(self, *, exclude=(), default_none=False):
         if default_none:
@@ -119,8 +134,8 @@ class ModelBase:
             )
             for f in fields(cls)
         ]
-        if cls.primary_keys():
-            entries += [sql("PRIMARY KEY ({})", sql.list(cls.primary_keys_sql()))]
+        if cls.primary_key_names():
+            entries += [sql("PRIMARY KEY ({})", sql.list(cls.primary_key_names_sql()))]
         return sql(
             "CREATE TABLE IF NOT EXISTS {table} ({entries})",
             table=cls.table_name_sql(),
@@ -128,17 +143,18 @@ class ModelBase:
         )
 
     @classmethod
-    def select_sql(cls, for_update=False, where=()):
+    def select_sql(cls, where=(), for_update=False):
         if not isinstance(where, Fragment):
             where = sql.all(where)
-        stmt = sql("SELECT FOR UPDATE") if for_update else sql("SELECT")
-        return sql(
-            "{stmt} {fields} FROM {name} WHERE {where}",
-            stmt=stmt,
+        query = sql(
+            "SELECT {fields} FROM {name} WHERE {where}",
             fields=sql.list(cls.field_names_sql()),
             name=cls.table_name_sql(),
             where=where,
         )
+        if for_update:
+            query = sql("{} FOR UPDATE", query)
+        return query
 
     @classmethod
     async def select_cursor(cls, connection, for_update=False, where=()):
@@ -167,14 +183,17 @@ class ModelBase:
     async def insert(self, connection_or_pool, exclude=()):
         await connection_or_pool.fetchrow(*self.insert_sql(exclude))
 
-    def upsert_sql(self, exclude=()):
+    @classmethod
+    def upsert_sql(cls, insert_sql, exclude=()):
         return sql(
             "{insert_sql} ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
-            insert_sql=self.insert_sql(exclude=exclude),
-            pks=sql.list(self.primary_keys_sql()),
+            insert_sql=insert_sql,
+            pks=sql.list(cls.primary_key_names_sql()),
             assignments=sql.list(
                 sql("{field}=EXCLUDED.{field}", field=x)
-                for x in self.field_names_sql(exclude=(*self.primary_keys(), *exclude))
+                for x in cls.field_names_sql(
+                    exclude=(*cls.primary_key_names(), *exclude)
+                )
             ),
         )
 
@@ -183,3 +202,85 @@ class ModelBase:
         result = await connection_or_pool.fetchrow(*query)
         is_update = result["xmax"] != 0
         return is_update
+
+    @classmethod
+    def ensure_model(cls, row):
+        if isinstance(row, cls):
+            return row
+        return cls(**row)
+
+    @classmethod
+    def delete_multiple_sql(cls, rows):
+        column_info = cls.column_info()
+        delete = sql(
+            "DELETE FROM {table} WHERE ({pks}) IN (SELECT * FROM {unnest})",
+            table=cls.table_name_sql(),
+            pks=sql.list(sql.identifier(pk) for pk in cls.primary_key_names()),
+            unnest=sql.unnest(
+                (row.primary_key() for row in rows),
+                (column_info[pk].type for pk in cls.primary_key_names()),
+            ),
+        )
+        return delete
+
+    @classmethod
+    async def delete_multiple(cls, connection_or_pool, rows):
+        await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
+
+    @classmethod
+    def upsert_multiple_sql(cls, rows):
+        column_info = cls.column_info()
+        insert = sql(
+            "INSERT INTO {table} ({fields}) SELECT * FROM {unnest}",
+            table=cls.table_name_sql(),
+            fields=sql.list(cls.field_names_sql()),
+            unnest=sql.unnest(
+                (row.field_values() for row in rows),
+                (column_info[name].type for name in cls.field_names()),
+            ),
+        )
+        upsert = cls.upsert_sql(insert)
+        return upsert
+
+    @classmethod
+    async def upsert_multiple(cls, connection_or_pool, rows):
+        await connection_or_pool.execute(*cls.upsert_multiple_sql(rows))
+
+    @classmethod
+    async def replace_multiple(cls, connection, rows, *, where, ignore=()):
+        old = {
+            row.primary_key(): row
+            async for row in cls.select_cursor(connection, where=where, for_update=True)
+        }
+        new = {row.primary_key(): cls.ensure_model(row) for row in rows}
+
+        pks = set((*old.keys(), *new.keys()))
+
+        created = []
+        updated = []
+        deleted = []
+
+        for pk in pks:
+            if pk not in old:
+                created.append(new[pk])
+            elif pk not in new:
+                deleted.append(old[pk])
+            elif not equal_ignoring(old[pk], new[pk], ignore):
+                updated.append(new[pk])
+
+        if created or updated:
+            await cls.upsert_multiple(connection, (*created, *updated))
+        if deleted:
+            await cls.delete_multiple(connection, deleted)
+
+        return created, updated, deleted
+
+
+def equal_ignoring(old, new, ignore):
+    keys = (*old.keys(), *new.keys())
+    for key in keys:
+        if key in ignore:
+            continue
+        if old.get(key, None) != new.get(key, None):
+            return False
+    return True

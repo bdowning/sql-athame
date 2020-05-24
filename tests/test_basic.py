@@ -157,5 +157,5 @@ def test_unnest():
     data = [[1, "foo"], [2, "bar"]]
     query = sql.unnest(data, ("INTEGER", "TEXT"))
     assert_that(list(query)).is_equal_to(
-        ["UNNEST($1:INTEGER[], $2:TEXT[])", (1, 2), ("foo", "bar")]
+        ["UNNEST($1::INTEGER[], $2::TEXT[])", (1, 2), ("foo", "bar")]
     )

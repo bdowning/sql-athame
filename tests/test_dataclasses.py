@@ -86,7 +86,7 @@ def test_upsert():
 
     t = Test(1, 42, "str")
 
-    assert_that(list(t.upsert_sql())).is_equal_to(
+    assert_that(list(t.upsert_sql(t.insert_sql()))).is_equal_to(
         [
             'INSERT INTO "table" ("id", "foo", "bar") VALUES ($1, $2, $3) '
             'ON CONFLICT ("id") DO UPDATE SET "foo"=EXCLUDED."foo", "bar"=EXCLUDED."bar"',
@@ -95,3 +95,25 @@ def test_upsert():
             "str",
         ]
     )
+
+
+def test_mapping():
+    @dataclasses.dataclass
+    class Test(ModelBase):
+        class Meta:
+            table_name = "table"
+            primary_keys = ("id",)
+
+        id: int
+        foo: int
+        bar: str
+
+    t = Test(1, 2, "foo")
+    assert_that(t["id"]).is_equal_to(1)
+    assert_that(t["foo"]).is_equal_to(2)
+    assert_that(t["bar"]).is_equal_to("foo")
+
+    assert_that(list(t.keys())).is_equal_to(["id", "foo", "bar"])
+
+    assert_that(dict(t)).is_equal_to({"id": 1, "foo": 2, "bar": "foo"})
+    assert_that(dict(**t)).is_equal_to({"id": 1, "foo": 2, "bar": "foo"})
