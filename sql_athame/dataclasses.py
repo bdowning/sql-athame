@@ -124,6 +124,12 @@ class ModelBase:
         return cls(**kwargs)
 
     @classmethod
+    def ensure_model(cls, row):
+        if isinstance(row, cls):
+            return row
+        return cls(**row)
+
+    @classmethod
     def create_table_sql(cls):
         column_info = cls.column_info()
         entries = [
@@ -161,12 +167,12 @@ class ModelBase:
         async for row in connection.cursor(
             *cls.select_sql(for_update=for_update, where=where)
         ):
-            yield cls(*row)
+            yield cls(**row)
 
     @classmethod
     async def select(cls, connection_or_pool, for_update=False, where=()):
         return [
-            cls(*row)
+            cls(**row)
             for row in await connection_or_pool.fetch(
                 *cls.select_sql(for_update=for_update, where=where)
             )
@@ -181,7 +187,7 @@ class ModelBase:
         )
 
     async def insert(self, connection_or_pool, exclude=()):
-        await connection_or_pool.fetchrow(*self.insert_sql(exclude))
+        await connection_or_pool.execute(*self.insert_sql(exclude))
 
     @classmethod
     def upsert_sql(cls, insert_sql, exclude=()):
@@ -204,12 +210,6 @@ class ModelBase:
         return is_update
 
     @classmethod
-    def ensure_model(cls, row):
-        if isinstance(row, cls):
-            return row
-        return cls(**row)
-
-    @classmethod
     def delete_multiple_sql(cls, rows):
         column_info = cls.column_info()
         delete = sql(
@@ -228,7 +228,7 @@ class ModelBase:
         await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
 
     @classmethod
-    def upsert_multiple_sql(cls, rows):
+    def insert_multiple_sql(cls, rows):
         column_info = cls.column_info()
         insert = sql(
             "INSERT INTO {table} ({fields}) SELECT * FROM {unnest}",
@@ -239,12 +239,15 @@ class ModelBase:
                 (column_info[name].type for name in cls.field_names()),
             ),
         )
-        upsert = cls.upsert_sql(insert)
-        return upsert
+        return insert
+
+    @classmethod
+    async def insert_multiple(cls, connection_or_pool, rows):
+        await connection_or_pool.execute(*cls.insert_multiple_sql(rows))
 
     @classmethod
     async def upsert_multiple(cls, connection_or_pool, rows):
-        await connection_or_pool.execute(*cls.upsert_multiple_sql(rows))
+        await connection_or_pool.execute(*cls.upsert_sql(cls.insert_multiple_sql(rows)))
 
     @classmethod
     async def replace_multiple(cls, connection, rows, *, where, ignore=()):
