@@ -71,6 +71,23 @@ T = TypeVar("T", bound="ModelBase")
 
 class ModelBase(Mapping[str, Any]):
     _column_info: Optional[Dict[str, ColumnInfo]]
+    _table_name: str
+    _primary_keys: Tuple[str, ...]
+
+    def __init_subclass__(
+        cls,
+        *,
+        table_name: str,
+        primary_key: str = None,
+        primary_keys: FieldNames = (),
+        **kwargs
+    ):
+        cls._table_name = table_name
+        if primary_key:
+            assert not primary_keys
+            cls._primary_keys = (primary_key,)
+        else:
+            cls._primary_keys = tuple(primary_keys)
 
     def keys(self):
         return self.field_names()
@@ -97,11 +114,11 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def table_name(cls) -> str:
-        return cls.Meta.table_name  # type: ignore
+        return cls._table_name
 
     @classmethod
     def primary_key_names(cls) -> Tuple[str, ...]:
-        return getattr(cls.Meta, "primary_keys", ())  # type: ignore
+        return cls._primary_keys
 
     @classmethod
     def table_name_sql(cls, *, prefix=None) -> Fragment:

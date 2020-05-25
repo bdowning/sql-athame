@@ -10,10 +10,7 @@ from sql_athame.dataclasses import ModelBase, model_field
 
 def test_modelclass():
     @dataclasses.dataclass
-    class Test(ModelBase):
-        class Meta:
-            table_name = "table"
-
+    class Test(ModelBase, table_name="table"):
         foo: int = model_field(type="INTEGER", constraints="NOT NULL")
         bar: str = model_field(default="hi", type="TEXT", constraints="NOT NULL")
 
@@ -53,11 +50,7 @@ def test_modelclass():
 
 def test_modelclass_implicit_types():
     @dataclasses.dataclass
-    class Test(ModelBase):
-        class Meta:
-            table_name = "table"
-            primary_keys = ("foo",)
-
+    class Test(ModelBase, table_name="table", primary_key="foo"):
         foo: int
         bar: str
         baz: Optional[uuid.UUID]
@@ -75,11 +68,7 @@ def test_modelclass_implicit_types():
 
 def test_upsert():
     @dataclasses.dataclass
-    class Test(ModelBase):
-        class Meta:
-            table_name = "table"
-            primary_keys = ("id",)
-
+    class Test(ModelBase, table_name="table", primary_key="id"):
         id: int
         foo: int
         bar: str
@@ -99,11 +88,7 @@ def test_upsert():
 
 def test_mapping():
     @dataclasses.dataclass
-    class Test(ModelBase):
-        class Meta:
-            table_name = "table"
-            primary_keys = ("id",)
-
+    class Test(ModelBase, table_name="table", primary_key="id"):
         id: int
         foo: int
         bar: str

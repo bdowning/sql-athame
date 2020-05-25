@@ -21,10 +21,7 @@ async def conn():
 
 
 @dataclass
-class Table1(ModelBase):
-    class Meta:
-        table_name = "table1"
-
+class Table1(ModelBase, table_name="table1"):
     a: int
     b: str
 
@@ -52,11 +49,7 @@ async def test_select(conn, tables):
 @pytest.mark.asyncio
 async def test_replace_multiple(conn) -> None:
     @dataclass(order=True)
-    class Test(ModelBase):
-        class Meta:
-            table_name = "test"
-            primary_keys = ("id",)
-
+    class Test(ModelBase, table_name="test", primary_key="id"):
         id: int
         a: int
         b: str
