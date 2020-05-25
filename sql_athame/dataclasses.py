@@ -28,7 +28,7 @@ FieldNamesSet = Union[SequenceOfStrings, Set[str]]
 @dataclass
 class ColumnInfo:
     type: str
-    constraints: List[str]
+    constraints: Tuple[str, ...]
 
     def create_table_string(self):
         return " ".join((self.type, *self.constraints))
@@ -37,7 +37,7 @@ class ColumnInfo:
 def model_field(*, type, constraints=(), **kwargs):
     if isinstance(constraints, str):
         constraints = (constraints,)
-    info = ColumnInfo(type, constraints)
+    info = ColumnInfo(type, tuple(constraints))
     return field(**kwargs, metadata={"sql_athame": info})  # type: ignore
 
 
@@ -63,7 +63,7 @@ def column_info_for_field(field):
     if "sql_athame" in field.metadata:
         return field.metadata["sql_athame"]
     type, *constraints = sql_type_map[field.type]
-    return ColumnInfo(type, constraints)
+    return ColumnInfo(type, tuple(constraints))
 
 
 T = TypeVar("T", bound="ModelBase")
@@ -165,7 +165,7 @@ class ModelBase(Mapping[str, Any]):
         return cls(**kwargs)  # type: ignore
 
     @classmethod
-    def ensure_model(cls: Type[T], row: Union[T, Dict[str, Any]]) -> T:
+    def ensure_model(cls: Type[T], row: Union[T, Mapping[str, Any]]) -> T:
         if isinstance(row, cls):
             return row
         return cls(**row)  # type: ignore
@@ -296,7 +296,7 @@ class ModelBase(Mapping[str, Any]):
     async def replace_multiple(
         cls: Type[T],
         connection,
-        rows: Union[Iterable[T], Iterable[Dict[str, Any]]],
+        rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,
         ignore: FieldNamesSet = ()
