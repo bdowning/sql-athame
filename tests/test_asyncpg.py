@@ -87,3 +87,32 @@ async def test_replace_multiple(conn):
     assert_that(list(sorted(await Test.select(conn)))).is_equal_to(
         [Test(1, 5, "apples"), Test(3, 2, "quux"), Test(4, 6, "fred")]
     )
+
+
+@pytest.mark.asyncio
+async def test_replace_multiple_multicolumn_pk(conn):
+    @dataclass(order=True)
+    class Test(ModelBase, table_name="test", primary_key=("id1", "id2")):
+        id1: int
+        id2: int
+        a: int
+        b: str
+
+    await conn.execute(*Test.create_table_sql())
+
+    data = [
+        Test(1, 1, 1, "foo"),
+        Test(1, 2, 1, "bar"),
+        Test(1, 3, 2, "quux"),
+    ]
+    await Test.insert_multiple(conn, data)
+
+    c, u, d = await Test.replace_multiple(
+        conn, [Test(1, 1, 5, "apples"), Test(2, 4, 6, "fred")], where=sql("a = 1")
+    )
+    assert_that(c).is_length(1)
+    assert_that(u).is_length(1)
+    assert_that(d).is_length(1)
+    assert_that(list(sorted(await Test.select(conn)))).is_equal_to(
+        [Test(1, 1, 5, "apples"), Test(1, 3, 2, "quux"), Test(2, 4, 6, "fred")]
+    )
