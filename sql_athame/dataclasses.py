@@ -34,7 +34,7 @@ class ColumnInfo:
         return " ".join((self.type, *self.constraints))
 
 
-def model_field(*, type, constraints=(), **kwargs):
+def model_field(*, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs):
     if isinstance(constraints, str):
         constraints = (constraints,)
     info = ColumnInfo(type, tuple(constraints))
@@ -272,7 +272,7 @@ class ModelBase(Mapping[str, Any]):
         await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
 
     @classmethod
-    def insert_multiple_sql(cls: Type[T], rows: Iterable[T]):
+    def insert_multiple_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
         insert = sql(
             "INSERT INTO {table} ({fields}) SELECT * FROM {unnest}",
             table=cls.table_name_sql(),

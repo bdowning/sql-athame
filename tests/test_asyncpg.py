@@ -47,7 +47,7 @@ async def test_select(conn, tables):
 
 
 @pytest.mark.asyncio
-async def test_replace_multiple(conn) -> None:
+async def test_replace_multiple(conn):
     @dataclass(order=True)
     class Test(ModelBase, table_name="test", primary_key="id"):
         id: int
