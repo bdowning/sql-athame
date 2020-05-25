@@ -9,6 +9,7 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Set,
     Tuple,
     Type,
     TypeVar,
@@ -17,7 +18,11 @@ from typing import (
 
 from .base import Fragment, sql
 
-WhereType = Union[Fragment, Iterable[Fragment]]
+Where = Union[Fragment, Iterable[Fragment]]
+# KLUDGE to avoid a string argument being valid
+SequenceOfStrings = Union[List[str], Tuple[str, ...]]
+FieldNames = SequenceOfStrings
+FieldNamesSet = Union[SequenceOfStrings, Set[str]]
 
 
 @dataclass
@@ -95,7 +100,7 @@ class ModelBase(Mapping[str, Any]):
         return cls.Meta.table_name  # type: ignore
 
     @classmethod
-    def primary_key_names(cls) -> Tuple[str]:
+    def primary_key_names(cls) -> Tuple[str, ...]:
         return getattr(cls.Meta, "primary_keys", ())  # type: ignore
 
     @classmethod
@@ -107,12 +112,12 @@ class ModelBase(Mapping[str, Any]):
         return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_key_names()]
 
     @classmethod
-    def field_names(cls, *, exclude: Itereable[str] = ()) -> List[str]:
+    def field_names(cls, *, exclude: FieldNamesSet = ()) -> List[str]:
         return [f.name for f in fields(cls) if f.name not in exclude]
 
     @classmethod
     def field_names_sql(
-        cls, *, prefix=None, exclude: Iterable[str] = ()
+        cls, *, prefix=None, exclude: FieldNamesSet = ()
     ) -> List[Fragment]:
         return [
             sql.identifier(f, prefix=prefix) for f in cls.field_names(exclude=exclude)
@@ -121,11 +126,11 @@ class ModelBase(Mapping[str, Any]):
     def primary_key(self) -> tuple:
         return tuple(getattr(self, pk) for pk in self.primary_key_names())
 
-    def field_values(self, *, exclude: Iterable[str] = ()) -> List[Any]:
+    def field_values(self, *, exclude: FieldNamesSet = ()) -> List[Any]:
         return [getattr(self, f.name) for f in fields(self) if f.name not in exclude]
 
     def field_values_sql(
-        self, *, exclude: Iterable[str] = (), default_none=False
+        self, *, exclude: FieldNamesSet = (), default_none=False
     ) -> List[Fragment]:
         if default_none:
 
@@ -142,7 +147,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def from_tuple(
-        cls: Type[T], tup: tuple, *, offset=0, exclude: Iterable[str] = ()
+        cls: Type[T], tup: tuple, *, offset=0, exclude: FieldNamesSet = ()
     ) -> T:
         names = (f.name for f in fields(cls) if f.name not in exclude)
         kwargs = {name: tup[offset] for offset, name in enumerate(names, start=offset)}
@@ -150,7 +155,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def from_dict(
-        cls: Type[T], dct: Dict[str, Any], *, exclude: Iterable[str] = ()
+        cls: Type[T], dct: Dict[str, Any], *, exclude: FieldNamesSet = ()
     ) -> T:
         names = {f.name for f in fields(cls) if f.name not in exclude}
         kwargs = {k: v for k, v in dct.items() if k in names}
@@ -182,7 +187,7 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
-    def select_sql(cls, where: WhereType = (), for_update=False) -> Fragment:
+    def select_sql(cls, where: Where = (), for_update=False) -> Fragment:
         if not isinstance(where, Fragment):
             where = sql.all(where)
         query = sql(
@@ -197,7 +202,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def select_cursor(
-        cls: Type[T], connection, for_update=False, where: WhereType = ()
+        cls: Type[T], connection, for_update=False, where: Where = ()
     ) -> AsyncGenerator[T, None]:
         async for row in connection.cursor(
             *cls.select_sql(for_update=for_update, where=where)
@@ -206,7 +211,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def select(
-        cls: Type[T], connection_or_pool, for_update=False, where: WhereType = ()
+        cls: Type[T], connection_or_pool, for_update=False, where: Where = ()
     ) -> List[T]:
         return [
             cls(**row)  # type: ignore
@@ -215,7 +220,7 @@ class ModelBase(Mapping[str, Any]):
             )
         ]
 
-    def insert_sql(self, exclude: Iterable[str] = ()) -> Fragment:
+    def insert_sql(self, exclude: FieldNamesSet = ()) -> Fragment:
         return sql(
             "INSERT INTO {table} ({fields}) VALUES ({values})",
             table=self.table_name_sql(),
@@ -223,11 +228,11 @@ class ModelBase(Mapping[str, Any]):
             values=sql.list(self.field_values_sql(exclude=exclude, default_none=True)),
         )
 
-    async def insert(self, connection_or_pool, exclude: Iterable[str] = ()):
+    async def insert(self, connection_or_pool, exclude: FieldNamesSet = ()):
         await connection_or_pool.execute(*self.insert_sql(exclude))
 
     @classmethod
-    def upsert_sql(cls, insert_sql: Fragment, exclude: Iterable[str] = ()) -> Fragment:
+    def upsert_sql(cls, insert_sql: Fragment, exclude: FieldNamesSet = ()) -> Fragment:
         return sql(
             "{insert_sql} ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
             insert_sql=insert_sql,
@@ -240,7 +245,7 @@ class ModelBase(Mapping[str, Any]):
             ),
         )
 
-    async def upsert(self, connection_or_pool, exclude: Iterable[str] = ()):
+    async def upsert(self, connection_or_pool, exclude: FieldNamesSet = ()):
         query = sql(
             "{} RETURNING xmax",
             self.upsert_sql(self.insert_sql(exclude=exclude), exclude=exclude),
@@ -295,8 +300,8 @@ class ModelBase(Mapping[str, Any]):
         connection,
         rows: Union[Iterable[T], Iterable[Dict[str, Any]]],
         *,
-        where: WhereType,
-        ignore: Iterable[str] = ()
+        where: Where,
+        ignore: FieldNamesSet = ()
     ) -> Tuple[List[T], List[T], List[T]]:
         pending = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
 

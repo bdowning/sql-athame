@@ -23,7 +23,7 @@ def test_modelclass():
         ('"foo", "bar"', [])
     )
     assert_that(
-        sql(", ").join(t.field_names_sql(prefix="test", exclude=("foo"))).query()
+        sql(", ").join(t.field_names_sql(prefix="test", exclude=("foo",))).query()
     ).is_equal_to(('"test"."bar"', []))
 
     assert_that(sql(", ").join(Test.field_names_sql()).query()).is_equal_to(
