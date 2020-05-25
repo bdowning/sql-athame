@@ -1,9 +1,14 @@
 version: 2.1
 
 jobs:
-  build-and-test:
+  test:
+    parameters:
+      python_version:
+        type: string
+        default: "3.8"
+
     docker:
-      - image: circleci/python:latest
+      - image: circleci/python:<< parameters.python_version >>
       - image: postgres:12
         environment:
           POSTGRES_PASSWORD: password
@@ -12,10 +17,10 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - poetry-{{ checksum "poetry.lock" }}
+            - poetry-<< parameters.python_version >>-{{ checksum "poetry.lock" }}
       - run: poetry install
       - save_cache:
-          key: poetry-{{ checksum "poetry.lock" }}
+          key: poetry-<< parameters.python_version >>-{{ checksum "poetry.lock" }}
           paths:
             - .venv
 
@@ -43,30 +48,27 @@ jobs:
 
       - run: poetry build
 
-      - persist_to_workspace:
-          root: ./dist
-          paths:
-            - "*"
-
   publish:
     docker:
       - image: circleci/python:latest
     steps:
       - checkout
-      - attach_workspace:
-          at: ./dist
+      - run: poetry build
       - run: poetry publish
 
 workflows:
   main:
     jobs:
-      - build-and-test:
+      - test:
           filters:
             tags:
               only: /^v.*/
+          matrix:
+            parameters:
+              python_version: ["3.7", "3.8"]
       - publish:
           requires:
-            - build-and-test
+            - test
           filters:
             tags:
               only: /^v.*/
