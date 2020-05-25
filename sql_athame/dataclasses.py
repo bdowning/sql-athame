@@ -71,28 +71,22 @@ T = TypeVar("T", bound="ModelBase")
 
 class ModelBase(Mapping[str, Any]):
     _column_info: Optional[Dict[str, ColumnInfo]]
-    _table_name: str
-    _primary_keys: Tuple[str, ...]
+    table_name: str
+    primary_key_names: Tuple[str, ...]
 
     def __init_subclass__(
-        cls,
-        *,
-        table_name: str,
-        primary_key: str = None,
-        primary_keys: FieldNames = (),
-        **kwargs
+        cls, *, table_name: str, primary_key: Union[FieldNames, str] = (), **kwargs
     ):
-        cls._table_name = table_name
-        if primary_key:
-            assert not primary_keys
-            cls._primary_keys = (primary_key,)
+        cls.table_name = table_name
+        if isinstance(primary_key, str):
+            cls.primary_key_names = (primary_key,)
         else:
-            cls._primary_keys = tuple(primary_keys)
+            cls.primary_key_names = tuple(primary_key)
 
     def keys(self):
         return self.field_names()
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str):
         return getattr(self, key)
 
     def __iter__(self):
@@ -105,28 +99,20 @@ class ModelBase(Mapping[str, Any]):
         return getattr(self, key, default)
 
     @classmethod
-    def column_info(cls) -> Dict[str, ColumnInfo]:
+    def column_info(cls, column: str) -> ColumnInfo:
         try:
-            return cls._column_info  # type: ignore
+            return cls._column_info[column]  # type: ignore
         except AttributeError:
             cls._column_info = {f.name: column_info_for_field(f) for f in fields(cls)}
-            return cls._column_info
-
-    @classmethod
-    def table_name(cls) -> str:
-        return cls._table_name
-
-    @classmethod
-    def primary_key_names(cls) -> Tuple[str, ...]:
-        return cls._primary_keys
+            return cls._column_info[column]
 
     @classmethod
     def table_name_sql(cls, *, prefix=None) -> Fragment:
-        return sql.identifier(cls.table_name(), prefix=prefix)
+        return sql.identifier(cls.table_name, prefix=prefix)
 
     @classmethod
     def primary_key_names_sql(cls, *, prefix=None) -> List[Fragment]:
-        return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_key_names()]
+        return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_key_names]
 
     @classmethod
     def field_names(cls, *, exclude: FieldNamesSet = ()) -> List[str]:
@@ -141,7 +127,7 @@ class ModelBase(Mapping[str, Any]):
         ]
 
     def primary_key(self) -> tuple:
-        return tuple(getattr(self, pk) for pk in self.primary_key_names())
+        return tuple(getattr(self, pk) for pk in self.primary_key_names)
 
     def field_values(self, *, exclude: FieldNamesSet = ()) -> List[Any]:
         return [getattr(self, f.name) for f in fields(self) if f.name not in exclude]
@@ -186,16 +172,15 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def create_table_sql(cls) -> Fragment:
-        column_info = cls.column_info()
         entries = [
             sql(
                 "{} {}",
                 sql.identifier(f.name),
-                sql.literal(column_info[f.name].create_table_string()),
+                sql.literal(cls.column_info(f.name).create_table_string()),
             )
             for f in fields(cls)
         ]
-        if cls.primary_key_names():
+        if cls.primary_key_names:
             entries += [sql("PRIMARY KEY ({})", sql.list(cls.primary_key_names_sql()))]
         return sql(
             "CREATE TABLE IF NOT EXISTS {table} ({entries})",
@@ -256,13 +241,11 @@ class ModelBase(Mapping[str, Any]):
             pks=sql.list(cls.primary_key_names_sql()),
             assignments=sql.list(
                 sql("{field}=EXCLUDED.{field}", field=x)
-                for x in cls.field_names_sql(
-                    exclude=(*cls.primary_key_names(), *exclude)
-                )
+                for x in cls.field_names_sql(exclude=(*cls.primary_key_names, *exclude))
             ),
         )
 
-    async def upsert(self, connection_or_pool, exclude: FieldNamesSet = ()):
+    async def upsert(self, connection_or_pool, exclude: FieldNamesSet = ()) -> bool:
         query = sql(
             "{} RETURNING xmax",
             self.upsert_sql(self.insert_sql(exclude=exclude), exclude=exclude),
@@ -273,32 +256,30 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def delete_multiple_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
-        column_info = cls.column_info()
         delete = sql(
             "DELETE FROM {table} WHERE ({pks}) IN (SELECT * FROM {unnest})",
             table=cls.table_name_sql(),
-            pks=sql.list(sql.identifier(pk) for pk in cls.primary_key_names()),
+            pks=sql.list(sql.identifier(pk) for pk in cls.primary_key_names),
             unnest=sql.unnest(
                 (row.primary_key() for row in rows),
-                (column_info[pk].type for pk in cls.primary_key_names()),
+                (cls.column_info(pk).type for pk in cls.primary_key_names),
             ),
         )
         return delete
 
     @classmethod
-    async def delete_multiple(cls, connection_or_pool, rows):
+    async def delete_multiple(cls: Type[T], connection_or_pool, rows: Iterable[T]):
         await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
 
     @classmethod
     def insert_multiple_sql(cls: Type[T], rows: Iterable[T]):
-        column_info = cls.column_info()
         insert = sql(
             "INSERT INTO {table} ({fields}) SELECT * FROM {unnest}",
             table=cls.table_name_sql(),
             fields=sql.list(cls.field_names_sql()),
             unnest=sql.unnest(
                 (row.field_values() for row in rows),
-                (column_info[name].type for name in cls.field_names()),
+                (cls.column_info(name).type for name in cls.field_names()),
             ),
         )
         return insert
@@ -344,7 +325,9 @@ class ModelBase(Mapping[str, Any]):
         return created, updated, deleted
 
 
-def equal_ignoring(old, new, ignore):
+def equal_ignoring(
+    old: Mapping[str, Any], new: Mapping[str, Any], ignore: FieldNamesSet
+) -> bool:
     keys = (*old.keys(), *new.keys())
     for key in keys:
         if key in ignore:
