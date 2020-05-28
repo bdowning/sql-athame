@@ -113,7 +113,7 @@ class ModelBase(Mapping[str, Any]):
     def __len__(self):
         return len(self.keys())
 
-    def get(self, key, default):
+    def get(self, key, default=None):
         return getattr(self, key, default)
 
     @classmethod
