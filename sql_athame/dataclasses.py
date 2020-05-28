@@ -28,17 +28,27 @@ FieldNamesSet = Union[SequenceOfStrings, Set[str]]
 @dataclass
 class ColumnInfo:
     type: str
+    create_type: str
     constraints: Tuple[str, ...]
 
     def create_table_string(self):
-        return " ".join((self.type, *self.constraints))
+        return " ".join((self.create_type, *self.constraints))
 
 
 def model_field(*, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs):
     if isinstance(constraints, str):
         constraints = (constraints,)
-    info = ColumnInfo(type, tuple(constraints))
+    info = ColumnInfo(
+        sql_create_type_map.get(type.upper(), type), type, tuple(constraints)
+    )
     return field(**kwargs, metadata={"sql_athame": info})  # type: ignore
+
+
+sql_create_type_map = {
+    "BIGSERIAL": "BIGINT",
+    "SERIAL": "INTEGER",
+    "SMALLSERIAL": "SMALLINT",
+}
 
 
 sql_type_map = {
@@ -65,7 +75,7 @@ def column_info_for_field(field):
     if "sql_athame" in field.metadata:
         return field.metadata["sql_athame"]
     type, *constraints = sql_type_map[field.type]
-    return ColumnInfo(type, tuple(constraints))
+    return ColumnInfo(type, type, tuple(constraints))
 
 
 T = TypeVar("T", bound="ModelBase")
