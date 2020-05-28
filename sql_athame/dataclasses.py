@@ -234,6 +234,21 @@ class ModelBase(Mapping[str, Any]):
             )
         ]
 
+    @classmethod
+    def create_sql(cls: Type[T], **kwargs) -> Fragment:
+        return sql(
+            "INSERT INTO {table} ({fields}) VALUES ({values}) RETURNING {out_fields}",
+            table=cls.table_name_sql(),
+            fields=sql.list(sql.identifier(x) for x in kwargs.keys()),
+            values=sql.list(sql.value(x) for x in kwargs.values()),
+            out_fields=sql.list(cls.field_names_sql()),
+        )
+
+    @classmethod
+    async def create(cls: Type[T], connection_or_pool, **kwargs) -> T:
+        row = await connection_or_pool.fetchrow(*cls.create_sql(**kwargs))
+        return cls(**row)  # type: ignore
+
     def insert_sql(self, exclude: FieldNamesSet = ()) -> Fragment:
         return sql(
             "INSERT INTO {table} ({fields}) VALUES ({values})",

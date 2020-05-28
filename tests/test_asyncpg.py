@@ -4,7 +4,7 @@ import asyncpg
 import pytest
 from assertpy import assert_that
 
-from sql_athame import ModelBase, sql
+from sql_athame import ModelBase, model_field, sql
 
 
 @pytest.fixture(autouse=True)
@@ -115,4 +115,23 @@ async def test_replace_multiple_multicolumn_pk(conn):
     assert_that(d).is_length(1)
     assert_that(list(sorted(await Test.select(conn)))).is_equal_to(
         [Test(1, 1, 5, "apples"), Test(1, 3, 2, "quux"), Test(2, 4, 6, "fred")]
+    )
+
+
+@pytest.mark.asyncio
+async def test_serial(conn):
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int = model_field(type="SERIAL")
+        foo: int
+        bar: str
+
+    await conn.execute(*Test.create_table_sql())
+    t = await Test.create(conn, foo=42, bar="bar")
+    assert_that(t).is_equal_to(Test(1, 42, "bar"))
+    t = await Test.create(conn, foo=42, bar="bar")
+    assert_that(t).is_equal_to(Test(2, 42, "bar"))
+
+    assert_that(list(await Test.select(conn))).is_equal_to(
+        [Test(1, 42, "bar"), Test(2, 42, "bar")]
     )

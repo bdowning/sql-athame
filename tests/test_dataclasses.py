@@ -102,3 +102,33 @@ def test_mapping():
 
     assert_that(dict(t)).is_equal_to({"id": 1, "foo": 2, "bar": "foo"})
     assert_that(dict(**t)).is_equal_to({"id": 1, "foo": 2, "bar": "foo"})
+
+
+def test_serial():
+    @dataclasses.dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int = model_field(type="SERIAL")
+        foo: int
+        bar: str
+
+    assert_that(Test.column_info("id").type).is_equal_to("INTEGER")
+    assert_that(Test.column_info("id").create_type).is_equal_to("SERIAL")
+    assert_that(list(Test.create_table_sql())).is_equal_to(
+        [
+            'CREATE TABLE IF NOT EXISTS "table" ('
+            '"id" SERIAL, '
+            '"foo" INTEGER NOT NULL, '
+            '"bar" TEXT NOT NULL, '
+            'PRIMARY KEY ("id"))'
+        ]
+    )
+
+    query = Test.create_sql(foo=42, bar="foo")
+    assert_that(list(query)).is_equal_to(
+        [
+            'INSERT INTO "table" ("foo", "bar") VALUES ($1, $2)'
+            ' RETURNING "id", "foo", "bar"',
+            42,
+            "foo",
+        ]
+    )
