@@ -43,6 +43,7 @@ def model_field(*, type: str, constraints: Union[str, Iterable[str]] = (), **kwa
 
 sql_type_map = {
     Optional[bool]: ("BOOLEAN",),
+    Optional[bytes]: ("BYTEA",),
     Optional[datetime.date]: ("DATE",),
     Optional[datetime.datetime]: ("TIMESTAMP",),
     Optional[float]: ("DOUBLE PRECISION",),
@@ -50,6 +51,7 @@ sql_type_map = {
     Optional[str]: ("TEXT",),
     Optional[uuid.UUID]: ("UUID",),
     bool: ("BOOLEAN", "NOT NULL"),
+    bytes: ("BYTEA", "NOT NULL"),
     datetime.date: ("DATE", "NOT NULL"),
     datetime.datetime: ("TIMESTAMP", "NOT NULL"),
     float: ("DOUBLE PRECISION", "NOT NULL"),
