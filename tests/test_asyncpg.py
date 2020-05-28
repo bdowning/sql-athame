@@ -1,10 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import asyncpg
 import pytest
 from assertpy import assert_that
 
-from sql_athame import ModelBase, model_field, sql
+from sql_athame import ModelBase, model_field_metadata, sql
 
 
 @pytest.fixture(autouse=True)
@@ -122,7 +122,7 @@ async def test_replace_multiple_multicolumn_pk(conn):
 async def test_serial(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int = model_field(type="SERIAL")
+        id: int = field(metadata=model_field_metadata(type="SERIAL"))
         foo: int
         bar: str
 

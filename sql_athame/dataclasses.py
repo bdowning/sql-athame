@@ -35,13 +35,19 @@ class ColumnInfo:
         return " ".join((self.create_type, *self.constraints))
 
 
-def model_field(*, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs):
+def model_field_metadata(
+    type: str, constraints: Union[str, Iterable[str]] = ()
+) -> Dict[str, Any]:
     if isinstance(constraints, str):
         constraints = (constraints,)
     info = ColumnInfo(
         sql_create_type_map.get(type.upper(), type), type, tuple(constraints)
     )
-    return field(**kwargs, metadata={"sql_athame": info})  # type: ignore
+    return {"sql_athame": info}
+
+
+def model_field(*, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs):
+    return field(**kwargs, metadata=model_field_metadata(type, constraints))  # type: ignore
 
 
 sql_create_type_map = {

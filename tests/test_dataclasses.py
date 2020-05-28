@@ -1,15 +1,15 @@
-import dataclasses
 import uuid
+from dataclasses import dataclass, field
 from typing import Optional
 
 from assertpy import assert_that
 
 from sql_athame import sql
-from sql_athame.dataclasses import ModelBase, model_field
+from sql_athame.dataclasses import ModelBase, model_field, model_field_metadata
 
 
 def test_modelclass():
-    @dataclasses.dataclass
+    @dataclass
     class Test(ModelBase, table_name="table"):
         foo: int = model_field(type="INTEGER", constraints="NOT NULL")
         bar: str = model_field(default="hi", type="TEXT", constraints="NOT NULL")
@@ -49,7 +49,7 @@ def test_modelclass():
 
 
 def test_modelclass_implicit_types():
-    @dataclasses.dataclass
+    @dataclass
     class Test(ModelBase, table_name="table", primary_key="foo"):
         foo: int
         bar: str
@@ -67,7 +67,7 @@ def test_modelclass_implicit_types():
 
 
 def test_upsert():
-    @dataclasses.dataclass
+    @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
         id: int
         foo: int
@@ -87,7 +87,7 @@ def test_upsert():
 
 
 def test_mapping():
-    @dataclasses.dataclass
+    @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
         id: int
         foo: int
@@ -105,9 +105,9 @@ def test_mapping():
 
 
 def test_serial():
-    @dataclasses.dataclass
+    @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int = model_field(type="SERIAL")
+        id: int = field(metadata=model_field_metadata(type="SERIAL"))
         foo: int
         bar: str
 
