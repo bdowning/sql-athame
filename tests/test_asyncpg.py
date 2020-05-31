@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 
 import asyncpg
@@ -135,3 +136,26 @@ async def test_serial(conn):
     assert_that(list(await Test.select(conn))).is_equal_to(
         [Test(1, 42, "bar"), Test(2, 42, "bar")]
     )
+
+
+@pytest.mark.asyncio
+async def test_unnest_json(conn):
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int = field(metadata=model_field_metadata(type="SERIAL"))
+        json: list = field(metadata=model_field_metadata(type="JSONB"))
+
+    await conn.set_type_codec(
+        "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+    )
+
+    await conn.execute(*Test.create_table_sql())
+
+    rows = [
+        Test(1, ["foo"]),
+        Test(2, ["foo", "bar"]),
+    ]
+
+    await Test.insert_multiple(conn, rows)
+
+    assert_that(list(await Test.select(conn))).is_equal_to(rows)

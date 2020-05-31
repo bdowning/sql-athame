@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import operator
 import re
 import string
@@ -138,11 +139,33 @@ class SQLFormatter:
 
     @staticmethod
     def unnest(data: Iterable[Sequence[Any]], types: Iterable[str]) -> Fragment:
-        nested = (sql("{}::{}[]", x, lit(t)) for x, t in zip(zip(*data), types))
+        nested = (nest_for_type(x, t) for x, t in zip(zip(*data), types))
         return sql("UNNEST({})", sql.list(nested))
 
 
 sql = SQLFormatter()
+
+
+json_types = ("JSON", "JSONB")
+
+
+def is_json_type(typename: str) -> bool:
+    return typename.upper() in json_types
+
+
+def nest_for_type(data: Sequence[Any], typename: str) -> Fragment:
+    if is_json_type(typename):
+        # https://github.com/MagicStack/asyncpg/issues/345
+
+        # KLUDGE - this doesn't work for trying to store literal
+        # strings when autoconverting
+        return sql(
+            "{}::TEXT[]::{}[]",
+            [x if isinstance(x, str) else json.dumps(x) for x in data],
+            lit(typename),
+        )
+    else:
+        return sql("{}::{}[]", data, lit(typename))
 
 
 def lit(text: str):
