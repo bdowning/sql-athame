@@ -11,7 +11,9 @@ from sql_athame import ModelBase, model_field_metadata, sql
 @pytest.fixture(autouse=True)
 @pytest.mark.asyncio
 async def conn():
-    conn = await asyncpg.connect("postgres://postgres:password@localhost/postgres")
+    conn = await asyncpg.connect(
+        "postgres://postgres:password@localhost:29329/postgres"
+    )
     txn = conn.transaction()
     try:
         await txn.start()
