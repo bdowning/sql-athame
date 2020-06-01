@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -12,8 +13,9 @@ from sql_athame import ModelBase, model_field_metadata, sql
 @pytest.fixture(autouse=True)
 @pytest.mark.asyncio
 async def conn():
+    port = os.environ.get("PGPORT", 29329)
     conn = await asyncpg.connect(
-        "postgres://postgres:password@localhost:29329/postgres"
+        f"postgres://postgres:password@localhost:{port}/postgres"
     )
     txn = conn.transaction()
     try:
