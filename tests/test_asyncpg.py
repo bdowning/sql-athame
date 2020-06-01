@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass, field
+from typing import Optional
 
 import asyncpg
 import pytest
@@ -145,7 +146,7 @@ async def test_unnest_json(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
         id: int = field(metadata=model_field_metadata(type="SERIAL"))
-        json: list = field(metadata=model_field_metadata(type="JSONB"))
+        json: Optional[list] = field(metadata=model_field_metadata(type="JSONB"))
 
     await conn.set_type_codec(
         "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
