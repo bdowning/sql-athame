@@ -158,10 +158,10 @@ def nest_for_type(data: Sequence[Any], typename: str) -> Fragment:
         # https://github.com/MagicStack/asyncpg/issues/345
 
         # KLUDGE - this doesn't work for trying to store literal
-        # strings when autoconverting
+        # strings when autoconverting; None is treated as SQL NULL
         return sql(
             "{}::TEXT[]::{}[]",
-            [x if isinstance(x, str) else json.dumps(x) for x in data],
+            [x if x is None or isinstance(x, str) else json.dumps(x) for x in data],
             lit(typename),
         )
     else:

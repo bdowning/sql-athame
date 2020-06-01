@@ -156,8 +156,12 @@ async def test_unnest_json(conn):
     rows = [
         Test(1, ["foo"]),
         Test(2, ["foo", "bar"]),
+        Test(3, None),
     ]
 
     await Test.insert_multiple(conn, rows)
 
     assert_that(list(await Test.select(conn))).is_equal_to(rows)
+    assert_that(
+        list(await conn.fetchrow('SELECT COUNT(*) FROM "table" WHERE json IS NULL'))
+    ).is_equal_to([1])
