@@ -20,6 +20,7 @@ from typing import (
 
 @dataclasses.dataclass(eq=False)
 class Placeholder:
+    __slots__ = ["name"]
     name: str
 
     def __repr__(self):
@@ -28,6 +29,7 @@ class Placeholder:
 
 @dataclasses.dataclass
 class Slot:
+    __slots__ = ["name"]
     name: str
 
 
@@ -51,8 +53,9 @@ def process_slot_value(name, value, values, placeholders):
 
 @dataclasses.dataclass
 class Fragment:
+    __slots__ = ["parts", "values"]
     parts: List[Part]
-    values: Dict[Placeholder, Any] = dataclasses.field(default_factory=dict)
+    values: Dict[Placeholder, Any]
 
     def flatten_into(self, parts: List[FlatPart], values: Dict[Placeholder, Any]):
         for part in self.parts:
@@ -181,11 +184,11 @@ class SQLFormatter:
 
     @staticmethod
     def slot(name: str) -> Fragment:
-        return Fragment([Slot(name)])
+        return Fragment([Slot(name)], {})
 
     @staticmethod
     def literal(text: str):
-        return Fragment([text])
+        return Fragment([text], {})
 
     @staticmethod
     def identifier(name: str, prefix: Optional[str] = None):
@@ -205,12 +208,12 @@ class SQLFormatter:
     @staticmethod
     def list(frags: Iterable[Fragment]) -> Fragment:
         parts = join_parts(frags, infix=", ")
-        return Fragment(list(parts))
+        return Fragment(list(parts), {})
 
     @staticmethod
     def unnest(data: Iterable[Sequence[Any]], types: Iterable[str]) -> Fragment:
         nested = (nest_for_type(x, t) for x, t in zip(zip(*data), types))
-        return Fragment(["UNNEST(", sql.list(nested), ")"])
+        return Fragment(["UNNEST(", sql.list(nested), ")"], {})
 
 
 sql = SQLFormatter()
@@ -240,14 +243,14 @@ def nest_for_type(data: Sequence[Any], typename: str) -> Fragment:
 
 
 def lit(text: str):
-    return Fragment([text])
+    return Fragment([text], {})
 
 
 def any_all(frags: List[Fragment], op: str, base_case: str):
     if not frags:
         return lit(base_case)
     parts = join_parts(frags, prefix="(", infix=f") {op} (", suffix=")")
-    return Fragment(list(parts))
+    return Fragment(list(parts), {})
 
 
 def join_parts(
