@@ -271,10 +271,15 @@ class ModelBase(Mapping[str, Any]):
         return cls(**row)  # type: ignore
 
     def insert_sql(self, exclude: FieldNamesSet = ()) -> Fragment:
-        return sql(
-            "INSERT INTO {table} ({fields}) VALUES ({values})",
-            table=self.table_name_sql(),
-            fields=sql.list(self.field_names_sql(exclude=exclude)),
+        cached = self._cached(
+            ("insert_sql", tuple(sorted(exclude))),
+            lambda: sql(
+                "INSERT INTO {table} ({fields}) VALUES ({values})",
+                table=self.table_name_sql(),
+                fields=sql.list(self.field_names_sql(exclude=exclude)),
+            ).compile(),
+        )
+        return cached(
             values=sql.list(self.field_values_sql(exclude=exclude, default_none=True)),
         )
 
