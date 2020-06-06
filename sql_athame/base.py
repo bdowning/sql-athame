@@ -41,7 +41,12 @@ def auto_numbered(field_name):
     return not re.match(r"[A-Za-z0-9_]", field_name)
 
 
-def process_slot_value(name, value, values, placeholders):
+def process_slot_value(
+    name: str,
+    value: Any,
+    values: Dict[Placeholder, Any],
+    placeholders: Dict[str, Placeholder],
+) -> Union["Fragment", Placeholder]:
     if isinstance(value, Fragment):
         return value
     else:
@@ -107,16 +112,16 @@ class Fragment:
         return Fragment(out_parts, values)
 
     def fill(self, **kwargs) -> "Fragment":
-        parts: List[FlatPart] = []
+        parts: List[Part] = []
         values: Dict[Placeholder, Any] = {}
-        self.flatten_into(parts, values)
+        self.flatten_into(cast(List[FlatPart], parts), values)
         placeholders: Dict[str, Placeholder] = {}
         for i, part in enumerate(parts):
             if isinstance(part, Slot):
                 parts[i] = process_slot_value(
                     part.name, kwargs[part.name], values, placeholders
                 )
-        return Fragment(cast(List[Part], parts), values)
+        return Fragment(parts, values)
 
     def query(self) -> Tuple[str, List[Any]]:
         parts: List[FlatPart] = []
