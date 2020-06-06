@@ -54,26 +54,13 @@ class Fragment:
     parts: List[Part]
     values: Dict[Placeholder, Any] = dataclasses.field(default_factory=dict)
 
-    def flatten_into(
-        self,
-        parts: List[FlatPart],
-        values: Dict[Placeholder, Any],
-        slots: Optional[Dict[str, Any]] = None,
-    ):
+    def flatten_into(self, parts: List[FlatPart], values: Dict[Placeholder, Any]):
         for part in self.parts:
             if isinstance(part, Fragment):
-                part.flatten_into(parts, values, slots)
+                part.flatten_into(parts, values)
             elif isinstance(part, Placeholder):
                 parts.append(part)
                 values[part] = self.values[part]
-            elif slots is not None and isinstance(part, Slot):
-                slot_value = slots[part.name]
-                if isinstance(slot_value, Fragment):
-                    slot_value.flatten_into(parts, values, slots)
-                else:
-                    placeholder = Placeholder(part.name)
-                    parts.append(placeholder)
-                    values[placeholder] = slot_value
             else:
                 parts.append(part)
 
@@ -119,7 +106,13 @@ class Fragment:
     def fill(self, **kwargs) -> "Fragment":
         parts: List[FlatPart] = []
         values: Dict[Placeholder, Any] = {}
-        self.flatten_into(parts, values, kwargs)
+        self.flatten_into(parts, values)
+        placeholders: Dict[str, Placeholder] = {}
+        for i, part in enumerate(parts):
+            if isinstance(part, Slot):
+                parts[i] = process_slot_value(
+                    part.name, kwargs[part.name], values, placeholders
+                )
         return Fragment(cast(List[Part], parts), values)
 
     def query(self) -> Tuple[str, List[Any]]:

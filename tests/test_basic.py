@@ -182,6 +182,13 @@ def test_slots(query):
     )
 
 
+def test_slots_same_id_placeholder():
+    query = sql("SELECT * FROM foo WHERE start > {id} AND end < {id}")
+    assert_that(list(query.fill(id="foo"))).is_equal_to(
+        ["SELECT * FROM foo WHERE start > $1 AND end < $1", "foo"]
+    )
+
+
 def test_slots_compiled():
     query = sql("SELECT * FROM foo WHERE id = {id}")
     fn = query.compile()
