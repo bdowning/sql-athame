@@ -65,7 +65,7 @@ class Fragment:
             elif isinstance(part, Placeholder):
                 parts.append(part)
                 values[part] = self.values[part]
-            elif slots and isinstance(part, Slot):
+            elif slots is not None and isinstance(part, Slot):
                 slot_value = slots[part.name]
                 if isinstance(slot_value, Fragment):
                     slot_value.flatten_into(parts, values, slots)
