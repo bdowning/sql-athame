@@ -86,6 +86,7 @@ def column_info_for_field(field):
 
 
 T = TypeVar("T", bound="ModelBase")
+U = TypeVar("U")
 
 
 class ModelBase(Mapping[str, Any]):
@@ -104,7 +105,7 @@ class ModelBase(Mapping[str, Any]):
             cls.primary_key_names = tuple(primary_key)
 
     @classmethod
-    def _cached(cls, key: tuple, thunk: Callable[[], Any]) -> Any:
+    def _cached(cls, key: tuple, thunk: Callable[[], U]) -> U:
         try:
             fragment_cache: Dict[tuple, Any] = cls._fragment_cache  # type: ignore
         except AttributeError:
