@@ -228,7 +228,6 @@ class ModelBase(Mapping[str, Any]):
                 "SELECT {fields} FROM {name} WHERE {where}",
                 fields=sql.list(cls.field_names_sql()),
                 name=cls.table_name_sql(),
-                where=sql.slot("where"),
             ).compile(),
         )
         query = cached(where=where)
@@ -317,7 +316,6 @@ class ModelBase(Mapping[str, Any]):
                 "DELETE FROM {table} WHERE ({pks}) IN (SELECT * FROM {unnest})",
                 table=cls.table_name_sql(),
                 pks=sql.list(sql.identifier(pk) for pk in cls.primary_key_names),
-                unnest=sql.slot("unnest"),
             ).compile(),
         )
         return cached(
@@ -339,7 +337,6 @@ class ModelBase(Mapping[str, Any]):
                 "INSERT INTO {table} ({fields}) SELECT * FROM {unnest}",
                 table=cls.table_name_sql(),
                 fields=sql.list(cls.field_names_sql()),
-                unnest=sql.slot("unnest"),
             ).compile(),
         )
         return cached(

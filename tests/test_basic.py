@@ -162,8 +162,14 @@ def test_unnest():
     )
 
 
-def test_slots():
-    query = sql("SELECT * FROM foo WHERE id = {}", sql.slot("id")).flatten()
+@pytest.mark.parametrize(
+    "query",
+    [
+        sql("SELECT * FROM foo WHERE id = {}", sql.slot("id")),
+        sql("SELECT * FROM foo WHERE id = {id}"),
+    ],
+)
+def test_slots(query):
     with pytest.raises(ValueError, match="Unfilled slot: 'id'"):
         query.query()
     with pytest.raises(ValueError, match="Unfilled slot: 'id'"):
@@ -177,7 +183,7 @@ def test_slots():
 
 
 def test_slots_compiled():
-    query = sql("SELECT * FROM foo WHERE id = {}", sql.slot("id")).flatten()
+    query = sql("SELECT * FROM foo WHERE id = {id}")
     fn = query.compile()
     assert_that(list(fn(id="foo"))).is_equal_to(
         ["SELECT * FROM foo WHERE id = $1", "foo"]

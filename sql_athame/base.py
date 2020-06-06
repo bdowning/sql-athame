@@ -163,8 +163,11 @@ class SQLFormatter:
                 if auto_numbered(field_name):
                     field_name = f"{next_auto_field}{field_name}"
                     next_auto_field += 1
-                value = fmtr.get_field(field_name, args, kwargs)[0]
-                if isinstance(value, Fragment):
+                try:
+                    value = fmtr.get_field(field_name, args, kwargs)[0]
+                except KeyError:
+                    value = Slot(field_name)
+                if isinstance(value, Fragment) or isinstance(value, Slot):
                     parts.append(value)
                 else:
                     if field_name not in placeholders:
