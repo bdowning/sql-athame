@@ -233,7 +233,7 @@ class ModelBase(Mapping[str, Any]):
         )
         query = cached(where=where)
         if for_update:
-            query = sql("{} FOR UPDATE", query)
+            query = Fragment([query, " FOR UPDATE"])
         return query
 
     @classmethod

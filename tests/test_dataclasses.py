@@ -35,6 +35,9 @@ def test_modelclass():
     assert_that(list(Test.select_sql())).is_equal_to(
         ['SELECT "foo", "bar" FROM "table" WHERE TRUE']
     )
+    assert_that(list(Test.select_sql(for_update=True))).is_equal_to(
+        ['SELECT "foo", "bar" FROM "table" WHERE TRUE FOR UPDATE']
+    )
     assert_that(list(t.insert_sql())).is_equal_to(
         ['INSERT INTO "table" ("foo", "bar") VALUES ($1, $2)', 42, "hi"]
     )
