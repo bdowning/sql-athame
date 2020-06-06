@@ -182,17 +182,12 @@ class ModelBase(Mapping[str, Any]):
         self, *, exclude: FieldNamesSet = (), default_none=False
     ) -> List[Fragment]:
         if default_none:
-
-            def field_value(name):
-                value = getattr(self, name)
-                return sql.literal("DEFAULT") if value is None else sql.value(value)
-
+            return [
+                sql.literal("DEFAULT") if value is None else sql.value(value)
+                for value in self.field_values()
+            ]
         else:
-
-            def field_value(name):
-                return sql.value(getattr(self, name))
-
-        return [field_value(f.name) for f in fields(self) if f.name not in exclude]
+            return [sql.value(value) for value in self.field_values()]
 
     @classmethod
     def from_tuple(
