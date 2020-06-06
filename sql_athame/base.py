@@ -232,8 +232,7 @@ def nest_for_type(data: Sequence[Any], typename: str) -> Fragment:
         # KLUDGE - this doesn't work for trying to store literal
         # strings when autoconverting; None is treated as SQL NULL
         processed_data = [
-            x if x is None or isinstance(x, str) else json.dumps(x)
-            for x in data
+            x if x is None or isinstance(x, str) else json.dumps(x) for x in data
         ]
         return Fragment([ph, f"::TEXT[]::{typename}[]"], {ph: processed_data})
     else:
