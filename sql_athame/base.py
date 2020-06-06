@@ -39,13 +39,14 @@ def auto_numbered(field_name):
     return not re.match(r"[A-Za-z0-9_]", field_name)
 
 
-def process_slot_value(name, value, values):
+def process_slot_value(name, value, values, placeholders):
     if isinstance(value, Fragment):
         return value
     else:
-        placeholder = Placeholder(name)
-        values[placeholder] = value
-        return placeholder
+        if name not in placeholders:
+            placeholders[name] = Placeholder(name)
+            values[placeholders[name]] = value
+        return placeholders[name]
 
 
 @dataclasses.dataclass
@@ -86,12 +87,13 @@ class Fragment:
         func = [
             "def compiled(**slots):",
             " values = in_values.copy()",
+            " placeholders = {}",
             " return Fragment([",
         ]
         for i, part in enumerate(flattened.parts):
             if isinstance(part, Slot):
                 func.append(
-                    f"  process_slot_value({repr(part.name)}, slots[{repr(part.name)}], values),"
+                    f"  process_slot_value({repr(part.name)}, slots[{repr(part.name)}], values, placeholders),"
                 )
             elif isinstance(part, str):
                 func.append(f"  {repr(part)},")
