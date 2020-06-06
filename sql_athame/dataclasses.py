@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, fields
 from typing import (
     Any,
     AsyncGenerator,
+    Callable,
     Dict,
     Iterable,
     List,
@@ -89,6 +90,7 @@ T = TypeVar("T", bound="ModelBase")
 
 class ModelBase(Mapping[str, Any]):
     _column_info: Optional[Dict[str, ColumnInfo]]
+    _fragment_cache: Optional[Dict[tuple, Any]]
     table_name: str
     primary_key_names: Tuple[str, ...]
 
@@ -100,6 +102,16 @@ class ModelBase(Mapping[str, Any]):
             cls.primary_key_names = (primary_key,)
         else:
             cls.primary_key_names = tuple(primary_key)
+
+    @classmethod
+    def _cached(cls, key: tuple, thunk: Callable[[], Any]) -> Any:
+        try:
+            fragment_cache: Dict[tuple, Any] = cls._fragment_cache  # type: ignore
+        except AttributeError:
+            fragment_cache = cls._fragment_cache = {}
+        if key not in fragment_cache:
+            fragment_cache[key] = thunk()
+        return fragment_cache[key]
 
     def keys(self):
         return self.field_names()
@@ -210,12 +222,16 @@ class ModelBase(Mapping[str, Any]):
     def select_sql(cls, where: Where = (), for_update=False) -> Fragment:
         if not isinstance(where, Fragment):
             where = sql.all(where)
-        query = sql(
-            "SELECT {fields} FROM {name} WHERE {where}",
-            fields=sql.list(cls.field_names_sql()),
-            name=cls.table_name_sql(),
-            where=where,
+        cached = cls._cached(
+            ("select_sql",),
+            lambda: sql(
+                "SELECT {fields} FROM {name} WHERE {where}",
+                fields=sql.list(cls.field_names_sql()),
+                name=cls.table_name_sql(),
+                where=sql.slot("where"),
+            ).compile(),
         )
+        query = cached(where=where)
         if for_update:
             query = sql("{} FOR UPDATE", query)
         return query
@@ -268,15 +284,21 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def upsert_sql(cls, insert_sql: Fragment, exclude: FieldNamesSet = ()) -> Fragment:
-        return sql(
-            "{insert_sql} ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
-            insert_sql=insert_sql,
-            pks=sql.list(cls.primary_key_names_sql()),
-            assignments=sql.list(
-                sql("{field}=EXCLUDED.{field}", field=x)
-                for x in cls.field_names_sql(exclude=(*cls.primary_key_names, *exclude))
-            ),
+        cached = cls._cached(
+            ("upsert_sql", tuple(sorted(exclude))),
+            lambda: sql(
+                " ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
+                insert_sql=insert_sql,
+                pks=sql.list(cls.primary_key_names_sql()),
+                assignments=sql.list(
+                    sql("{field}=EXCLUDED.{field}", field=x)
+                    for x in cls.field_names_sql(
+                        exclude=(*cls.primary_key_names, *exclude)
+                    )
+                ),
+            ).flatten(),
         )
+        return Fragment([insert_sql, cached])
 
     async def upsert(self, connection_or_pool, exclude: FieldNamesSet = ()) -> bool:
         query = sql(
@@ -289,16 +311,21 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def delete_multiple_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
-        delete = sql(
-            "DELETE FROM {table} WHERE ({pks}) IN (SELECT * FROM {unnest})",
-            table=cls.table_name_sql(),
-            pks=sql.list(sql.identifier(pk) for pk in cls.primary_key_names),
+        cached = cls._cached(
+            ("delete_multiple_sql",),
+            lambda: sql(
+                "DELETE FROM {table} WHERE ({pks}) IN (SELECT * FROM {unnest})",
+                table=cls.table_name_sql(),
+                pks=sql.list(sql.identifier(pk) for pk in cls.primary_key_names),
+                unnest=sql.slot("unnest"),
+            ).compile(),
+        )
+        return cached(
             unnest=sql.unnest(
                 (row.primary_key() for row in rows),
                 (cls.column_info(pk).type for pk in cls.primary_key_names),
             ),
         )
-        return delete
 
     @classmethod
     async def delete_multiple(cls: Type[T], connection_or_pool, rows: Iterable[T]):
@@ -306,16 +333,21 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def insert_multiple_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
-        insert = sql(
-            "INSERT INTO {table} ({fields}) SELECT * FROM {unnest}",
-            table=cls.table_name_sql(),
-            fields=sql.list(cls.field_names_sql()),
+        cached = cls._cached(
+            ("insert_multiple_sql",),
+            lambda: sql(
+                "INSERT INTO {table} ({fields}) SELECT * FROM {unnest}",
+                table=cls.table_name_sql(),
+                fields=sql.list(cls.field_names_sql()),
+                unnest=sql.slot("unnest"),
+            ).compile(),
+        )
+        return cached(
             unnest=sql.unnest(
                 (row.field_values() for row in rows),
                 (cls.column_info(name).type for name in cls.field_names()),
             ),
         )
-        return insert
 
     @classmethod
     async def insert_multiple(cls: Type[T], connection_or_pool, rows: Iterable[T]):

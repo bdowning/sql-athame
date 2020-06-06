@@ -1,3 +1,4 @@
+import pytest
 from assertpy import assert_that
 
 from sql_athame import sql
@@ -158,4 +159,29 @@ def test_unnest():
     query = sql.unnest(data, ("INTEGER", "TEXT"))
     assert_that(list(query)).is_equal_to(
         ["UNNEST($1::INTEGER[], $2::TEXT[])", (1, 2), ("foo", "bar")]
+    )
+
+
+def test_slots():
+    query = sql("SELECT * FROM foo WHERE id = {}", sql.slot("id")).flatten()
+    with pytest.raises(ValueError, match="Unfilled slot: 'id'"):
+        query.query()
+    with pytest.raises(ValueError, match="Unfilled slot: 'id'"):
+        list(query)
+    assert_that(list(query.fill(id="foo"))).is_equal_to(
+        ["SELECT * FROM foo WHERE id = $1", "foo"]
+    )
+    assert_that(list(query.fill(id=sql.literal("foo")))).is_equal_to(
+        ["SELECT * FROM foo WHERE id = foo"]
+    )
+
+
+def test_slots_compiled():
+    query = sql("SELECT * FROM foo WHERE id = {}", sql.slot("id")).flatten()
+    fn = query.compile()
+    assert_that(list(fn(id="foo"))).is_equal_to(
+        ["SELECT * FROM foo WHERE id = $1", "foo"]
+    )
+    assert_that(list(fn(id=sql.literal("foo")))).is_equal_to(
+        ["SELECT * FROM foo WHERE id = foo"]
     )
