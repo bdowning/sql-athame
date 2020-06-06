@@ -160,8 +160,23 @@ class ModelBase(Mapping[str, Any]):
     def primary_key(self) -> tuple:
         return tuple(getattr(self, pk) for pk in self.primary_key_names)
 
+    @classmethod
+    def _get_field_values_fn(cls, exclude: FieldNamesSet = ()):
+        env: Dict[str, Any] = dict()
+        func = ["def get_field_values(self):", " return ["]
+        for f in fields(cls):
+            if f.name not in exclude:
+                func.append(f"  self.{f.name},")
+        func += [" ]"]
+        exec("\n".join(func), env)
+        return env["get_field_values"]
+
     def field_values(self, *, exclude: FieldNamesSet = ()) -> List[Any]:
-        return [getattr(self, f.name) for f in fields(self) if f.name not in exclude]
+        get_field_values = self._cached(
+            ("get_field_values", tuple(sorted(exclude))),
+            lambda: self._get_field_values_fn(exclude),
+        )
+        return get_field_values(self)
 
     def field_values_sql(
         self, *, exclude: FieldNamesSet = (), default_none=False
@@ -367,7 +382,7 @@ class ModelBase(Mapping[str, Any]):
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,
-        ignore: FieldNamesSet = ()
+        ignore: FieldNamesSet = (),
     ) -> Tuple[List[T], List[T], List[T]]:
         pending = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
 
