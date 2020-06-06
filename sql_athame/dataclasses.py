@@ -91,13 +91,14 @@ U = TypeVar("U")
 
 class ModelBase(Mapping[str, Any]):
     _column_info: Optional[Dict[str, ColumnInfo]]
-    _cache: Optional[Dict[tuple, Any]]
+    _cache: Dict[tuple, Any]
     table_name: str
     primary_key_names: Tuple[str, ...]
 
     def __init_subclass__(
         cls, *, table_name: str, primary_key: Union[FieldNames, str] = (), **kwargs
     ):
+        cls._cache = {}
         cls.table_name = table_name
         if isinstance(primary_key, str):
             cls.primary_key_names = (primary_key,)
@@ -107,12 +108,10 @@ class ModelBase(Mapping[str, Any]):
     @classmethod
     def _cached(cls, key: tuple, thunk: Callable[[], U]) -> U:
         try:
-            cache: Dict[tuple, Any] = cls._cache  # type: ignore
-        except AttributeError:
-            cache = cls._cache = {}
-        if key not in cache:
-            cache[key] = thunk()
-        return cache[key]
+            return cls._cache[key]
+        except KeyError:
+            cls._cache[key] = thunk()
+            return cls._cache[key]
 
     def keys(self):
         return self.field_names()
@@ -163,12 +162,12 @@ class ModelBase(Mapping[str, Any]):
     @classmethod
     def _get_field_values_fn(cls, exclude: FieldNamesSet = ()):
         env: Dict[str, Any] = dict()
-        func = ["def get_field_values(self):", " return ["]
+        func = ["def get_field_values(self): return ["]
         for f in fields(cls):
             if f.name not in exclude:
-                func.append(f"  self.{f.name},")
-        func += [" ]"]
-        exec("\n".join(func), env)
+                func.append(f"self.{f.name},")
+        func += ["]"]
+        exec(" ".join(func), env)
         return env["get_field_values"]
 
     def field_values(self, *, exclude: FieldNamesSet = ()) -> List[Any]:
