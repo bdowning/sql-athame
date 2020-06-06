@@ -79,7 +79,6 @@ class Fragment:
     def compile(self) -> Callable[..., "Fragment"]:
         flattened = self.flatten()
         env = dict(
-            parts=flattened.parts,
             in_values=flattened.values,
             process_slot_value=process_slot_value,
             Fragment=Fragment,
@@ -94,8 +93,11 @@ class Fragment:
                 func.append(
                     f"  process_slot_value({repr(part.name)}, slots[{repr(part.name)}], values),"
                 )
+            elif isinstance(part, str):
+                func.append(f"  {repr(part)},")
             else:
-                func.append(f"  parts[{i}],")
+                env[f"part_{i}"] = part
+                func.append(f"  part_{i},")
         func += [" ], values)"]
         exec("\n".join(func), env)
         return env["compiled"]  # type: ignore
