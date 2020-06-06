@@ -5,6 +5,7 @@ usage=()
 usage+=("  $0 tests - run tests")
 tests() {
     poetry run pytest
+    lint
 }
 
 usage+=("  $0 refmt - reformat code")
