@@ -91,7 +91,7 @@ U = TypeVar("U")
 
 class ModelBase(Mapping[str, Any]):
     _column_info: Optional[Dict[str, ColumnInfo]]
-    _fragment_cache: Optional[Dict[tuple, Any]]
+    _cache: Optional[Dict[tuple, Any]]
     table_name: str
     primary_key_names: Tuple[str, ...]
 
@@ -107,12 +107,12 @@ class ModelBase(Mapping[str, Any]):
     @classmethod
     def _cached(cls, key: tuple, thunk: Callable[[], U]) -> U:
         try:
-            fragment_cache: Dict[tuple, Any] = cls._fragment_cache  # type: ignore
+            cache: Dict[tuple, Any] = cls._cache  # type: ignore
         except AttributeError:
-            fragment_cache = cls._fragment_cache = {}
-        if key not in fragment_cache:
-            fragment_cache[key] = thunk()
-        return fragment_cache[key]
+            cache = cls._cache = {}
+        if key not in cache:
+            cache[key] = thunk()
+        return cache[key]
 
     def keys(self):
         return self.field_names()
