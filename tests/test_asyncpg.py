@@ -168,3 +168,16 @@ async def test_unnest_json(conn):
     assert_that(
         list(await conn.fetchrow('SELECT COUNT(*) FROM "table" WHERE json IS NULL'))
     ).is_equal_to([1])
+
+
+@pytest.mark.asyncio
+async def test_unnest_empty(conn):
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int = field(metadata=model_field_metadata(type="SERIAL"))
+
+    await conn.execute(*Test.create_table_sql())
+
+    await Test.insert_multiple(conn, [])
+
+    assert_that(list(await Test.select(conn))).is_equal_to([])

@@ -217,7 +217,9 @@ class SQLFormatter:
 
     @staticmethod
     def unnest(data: Iterable[Sequence[Any]], types: Iterable[str]) -> Fragment:
-        nested = (nest_for_type(x, t) for x, t in zip(zip(*data), types))
+        nested = list(nest_for_type(x, t) for x, t in zip(zip(*data), types))
+        if not nested:
+            nested = list(nest_for_type([], t) for t in types)
         return Fragment(["UNNEST(", sql.list(nested), ")"], {})
 
 
