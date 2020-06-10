@@ -37,8 +37,12 @@ Part = Union[str, Placeholder, Slot, "Fragment"]
 FlatPart = Union[str, Placeholder, Slot]
 
 
+newline_whitespace_re = re.compile(r"\s*\n\s*")
+auto_numbered_re = re.compile(r"[A-Za-z0-9_]")
+
+
 def auto_numbered(field_name):
-    return not re.match(r"[A-Za-z0-9_]", field_name)
+    return not auto_numbered_re.match(field_name)
 
 
 def process_slot_value(
@@ -145,7 +149,7 @@ class Fragment:
             values[part]
             for part, i in sorted(placeholder_ids.items(), key=operator.itemgetter(1))
         ]
-        return "".join(out_parts), placeholder_values
+        return "".join(out_parts).strip(), placeholder_values
 
     def __iter__(self) -> Iterator[Any]:
         sql, args = self.query()
@@ -156,7 +160,11 @@ class Fragment:
 
 
 class SQLFormatter:
-    def __call__(self, fmt: str, *args, **kwargs) -> Fragment:
+    def __call__(
+        self, fmt: str, *args, preserve_formatting=False, **kwargs
+    ) -> Fragment:
+        if not preserve_formatting:
+            fmt = newline_whitespace_re.sub(" ", fmt)
         fmtr = string.Formatter()
         parts: List[Part] = []
         values: Dict[Placeholder, Any] = {}

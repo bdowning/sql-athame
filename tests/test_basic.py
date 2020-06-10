@@ -54,13 +54,11 @@ def test_basic():
         ).query()
     ).is_equal_to(
         (
-            """
-            SELECT *
-              FROM (SELECT * FROM orders WHERE TRUE AND id = $1) sq
-              JOIN other_table ot ON (ot.id = sq.id)
-              WHERE ot.foo = $2
-              LIMIT $3
-            """,
+            "SELECT *"
+            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) sq"
+            " JOIN other_table ot ON (ot.id = sq.id)"
+            " WHERE ot.foo = $2"
+            " LIMIT $3",
             ["xyzzy", "bork", 50],
         )
     )
@@ -105,11 +103,9 @@ def test_repeated_value_nested():
         ).query()
     ).is_equal_to(
         (
-            """
-            SELECT a.*, b.*
-              FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,
-                   (SELECT * FROM orders WHERE TRUE AND id = $2) b
-            """,
+            "SELECT a.*, b.*"
+            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
+            " (SELECT * FROM orders WHERE TRUE AND id = $2) b",
             ["a", "b"],
         )
     )
@@ -129,11 +125,28 @@ def test_repeated_value_nested():
         ).query()
     ).is_equal_to(
         (
+            "SELECT a.*, b.*"
+            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
+            " (SELECT * FROM orders WHERE TRUE AND id = $1) b",
+            ["a"],
+        )
+    )
+
+    assert_that(
+        sql(
             """
             SELECT a.*, b.*
-              FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,
-                   (SELECT * FROM orders WHERE TRUE AND id = $1) b
+              FROM ({sq_a}) a,
+                   ({sq_b}) b
             """,
+            sq_a=sq_a,
+            sq_b=sq_a,
+        ).query()
+    ).is_equal_to(
+        (
+            "SELECT a.*, b.*"
+            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
+            " (SELECT * FROM orders WHERE TRUE AND id = $1) b",
             ["a"],
         )
     )
@@ -206,3 +219,19 @@ def test_slots_compiled_same_id_placeholder():
     assert_that(list(fn(id="foo"))).is_equal_to(
         ["SELECT * FROM foo WHERE start > $1 AND end < $1", "foo"]
     )
+
+
+def test_preserve_formatting():
+    query = sql("SELECT *   \n    FROM foo")
+    assert_that(list(query)).is_equal_to(["SELECT * FROM foo"])
+
+    query = sql("SELECT *   \n    FROM foo", preserve_formatting=True)
+    assert_that(list(query)).is_equal_to(["SELECT *   \n    FROM foo"])
+
+    # leading and trailing whitespace is still stripped
+    query = sql("    SELECT *   \n    FROM foo  ", preserve_formatting=True)
+    assert_that(list(query)).is_equal_to(["SELECT *   \n    FROM foo"])
+
+    # spacing with no newlines is preserved always
+    query = sql("SELECT 'string   with   spaces'")
+    assert_that(list(query)).is_equal_to(["SELECT 'string   with   spaces'"])
