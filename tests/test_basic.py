@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from assertpy import assert_that
 
@@ -235,3 +237,39 @@ def test_preserve_formatting():
     # spacing with no newlines is preserved always
     query = sql("SELECT 'string   with   spaces'")
     assert_that(list(query)).is_equal_to(["SELECT 'string   with   spaces'"])
+
+
+def test_escape():
+    query = sql("SELECT {}", sql.escape("funky\nstring"))
+    assert_that(list(query)).is_equal_to(["SELECT E'funky\\nstring'"])
+
+    query = sql("SELECT {}", sql.escape(4))
+    assert_that(list(query)).is_equal_to(["SELECT 4"])
+
+    query = sql("SELECT {}", sql.escape(4.0))
+    assert_that(list(query)).is_equal_to(["SELECT 4.0"])
+
+    with pytest.raises(ValueError):
+        query = sql("SELECT {}", sql.escape(float("nan")))
+
+    with pytest.raises(ValueError):
+        query = sql("SELECT {}", sql.escape(float(1e1234567)))
+
+    with pytest.raises(ValueError):
+        query = sql("SELECT {}", sql.escape(float(-1e1234567)))
+
+    query = sql(
+        "SELECT {}", sql.escape(uuid.UUID("66c41d78-5ebc-4f96-a05b-85c92a15a9a1"))
+    )
+    assert_that(list(query)).is_equal_to(
+        ["SELECT '66c41d78-5ebc-4f96-a05b-85c92a15a9a1'::UUID"]
+    )
+
+    query = sql("SELECT {}", sql.escape([]))
+    assert_that(list(query)).is_equal_to(["SELECT ARRAY[]"])
+
+    query = sql("SELECT {}", sql.escape([42, 3]))
+    assert_that(list(query)).is_equal_to(["SELECT ARRAY[42, 3]"])
+
+    query = sql("SELECT {}", sql.escape(["str", "funky\nstring"]))
+    assert_that(list(query)).is_equal_to(["SELECT ARRAY[E'str', E'funky\\nstring']"])

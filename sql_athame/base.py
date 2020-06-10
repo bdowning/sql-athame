@@ -17,6 +17,8 @@ from typing import (
     cast,
 )
 
+from .escape import escape
+
 
 @dataclasses.dataclass(eq=False)
 class Placeholder:
@@ -194,6 +196,10 @@ class SQLFormatter:
     def value(value: Any):
         placeholder = Placeholder("value")
         return Fragment([placeholder], {placeholder: value})
+
+    @staticmethod
+    def escape(value: Any) -> Fragment:
+        return lit(escape(value))
 
     @staticmethod
     def slot(name: str) -> Fragment:
