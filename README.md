@@ -173,6 +173,33 @@ Creates a function that when called with `**kwargs` will create a SQL
 optimized to do as much work as possible up front and can be
 considerably faster if repeated often.
 
+### Fragment.prepare(self) -> Tuple[str, Callable[..., List[Any]]]
+
+Renders `self` into a SQL query string; returns that string and a
+function that when called with `**kwargs` containing the unfilled
+slots of `self` will return a list containing the placeholder values
+for `self` as filled with `**kwargs`.
+
+```python
+>>> query, query_args = sql("UPDATE tbl SET foo={foo}, bar={bar} WHERE baz < {baz}", baz=10).prepare()
+>>> query
+'UPDATE tbl SET foo=$1, bar=$2 WHERE baz < $3'
+>>> query_args(foo=1, bar=2)
+[1, 2, 10]
+>>> query_args(bar=42, foo=3)
+[3, 42, 10]
+```
+
+As the name implies this is intended to be used in prepared
+statements:
+
+```python
+query, query_args = sql("UPDATE tbl SET foo={foo}, bar={bar} WHERE baz < {baz}", baz=10).prepare()
+stmt = await conn.prepare(query)
+await stmt.execute(*query_args(foo=1, bar=2))
+await stmt.execute(*query_args(bar=42, foo=3))
+```
+
 ## Example
 
 ```python

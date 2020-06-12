@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import operator
 import re
 import string
 from typing import (
@@ -29,7 +28,7 @@ class Placeholder:
         return f"Placeholder(id={id(self)}, name={repr(self.name)})"
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Slot:
     __slots__ = ["name"]
     name: str
@@ -129,29 +128,53 @@ class Fragment:
                 )
         return Fragment(parts, values)
 
-    def query(self) -> Tuple[str, List[Any]]:
+    def prep_query(self, allow_slots=False):
         parts: List[FlatPart] = []
         values: Dict[Placeholder, Any] = {}
         self.flatten_into(parts, values)
-        placeholder_count = 0
+        args: List[Union[Placeholder, Slot]] = []
         placeholder_ids: Dict[Placeholder, int] = {}
+        slot_ids: Dict[Slot, int] = {}
         out_parts: List[str] = []
         for part in parts:
             if isinstance(part, Slot):
-                raise ValueError(f"Unfilled slot: {repr(part.name)}")
+                if not allow_slots:
+                    raise ValueError(f"Unfilled slot: {repr(part.name)}")
+                if part not in slot_ids:
+                    args.append(part)
+                    slot_ids[part] = len(args)
+                out_parts.append(f"${slot_ids[part]}")
             elif isinstance(part, Placeholder):
                 if part not in placeholder_ids:
-                    placeholder_count += 1
-                    placeholder_ids[part] = placeholder_count
+                    args.append(part)
+                    placeholder_ids[part] = len(args)
                 out_parts.append(f"${placeholder_ids[part]}")
             else:
                 assert isinstance(part, str)
                 out_parts.append(part)
-        placeholder_values = [
-            values[part]
-            for part, i in sorted(placeholder_ids.items(), key=operator.itemgetter(1))
+        return "".join(out_parts).strip(), values, args
+
+    def query(self) -> Tuple[str, List[Any]]:
+        query, values, args = self.prep_query()
+        placeholder_values = [values[arg] for arg in args]
+        return query, placeholder_values
+
+    def prepare(self) -> Tuple[str, Callable[..., List[Any]]]:
+        query, values, args = self.prep_query(allow_slots=True)
+        env = dict()
+        func = [
+            "def generate_args(**kwargs):",
+            " return [",
         ]
-        return "".join(out_parts).strip(), placeholder_values
+        for i, arg in enumerate(args):
+            if isinstance(arg, Slot):
+                func.append(f"  kwargs[{repr(arg.name)}],")
+            else:
+                env[f"value_{i}"] = values[arg]
+                func.append(f"  value_{i},")
+        func += [" ]"]
+        exec("\n".join(func), env)
+        return query, env["generate_args"]  # type: ignore
 
     def __iter__(self) -> Iterator[Any]:
         sql, args = self.query()

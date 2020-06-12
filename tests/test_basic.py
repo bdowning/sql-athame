@@ -223,6 +223,15 @@ def test_slots_compiled_same_id_placeholder():
     )
 
 
+def test_prepare():
+    query = sql("SELECT * FROM foo WHERE start > {start} AND end < {end}", end="end")
+    q, generate_args = query.prepare()
+    assert_that(q).is_equal_to("SELECT * FROM foo WHERE start > $1 AND end < $2")
+    assert_that(generate_args(start="start")).is_equal_to(["start", "end"])
+    with pytest.raises(KeyError):
+        generate_args()
+
+
 def test_preserve_formatting():
     query = sql("SELECT *   \n    FROM foo")
     assert_that(list(query)).is_equal_to(["SELECT * FROM foo"])
