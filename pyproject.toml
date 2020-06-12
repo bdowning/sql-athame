@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sql-athame"
-version = "0.3.9"
+version = "0.3.10"
 description = "Python tool for slicing and dicing SQL"
 authors = ["Brian Downing <bdowning@lavos.net>"]
 license = "MIT"
