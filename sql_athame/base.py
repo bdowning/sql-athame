@@ -157,7 +157,7 @@ class Fragment:
         sql, args = self.query()
         return iter((sql, *args))
 
-    def join(self, parts: List["Fragment"]):
+    def join(self, parts: Iterable["Fragment"]) -> "Fragment":
         return Fragment(list(join_parts(parts, infix=self)), {})
 
 
@@ -217,17 +217,16 @@ class SQLFormatter:
             return lit(f"{quote_identifier(name)}")
 
     @staticmethod
-    def all(frags: Iterable[Fragment]) -> Fragment:
-        return any_all(list(frags), "AND", "TRUE")
+    def all(parts: Iterable[Fragment]) -> Fragment:
+        return any_all(list(parts), "AND", "TRUE")
 
     @staticmethod
-    def any(frags: Iterable[Fragment]) -> Fragment:
-        return any_all(list(frags), "OR", "FALSE")
+    def any(parts: Iterable[Fragment]) -> Fragment:
+        return any_all(list(parts), "OR", "FALSE")
 
     @staticmethod
-    def list(frags: Iterable[Fragment]) -> Fragment:
-        parts = join_parts(frags, infix=", ")
-        return Fragment(list(parts), {})
+    def list(parts: Iterable[Fragment]) -> Fragment:
+        return Fragment(list(join_parts(parts, infix=", ")), {})
 
     @staticmethod
     def unnest(data: Iterable[Sequence[Any]], types: Iterable[str]) -> Fragment:

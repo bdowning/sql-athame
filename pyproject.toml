@@ -27,6 +27,7 @@ pytest-cov = "*"
 bump2version = "*"
 asyncpg = "*"
 pytest-asyncio = "*"
+grip = "*"
 
 [build-system]
 requires = ["poetry>=0.12"]
