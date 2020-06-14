@@ -115,6 +115,7 @@ await conn.fetch(*q)
 ```
 
 ### sql.list(parts: Iterable[Fragment]) -> Fragment:
+### sql.list(*parts: Fragment) -> Fragment:
 
 Creates a SQL `Fragment` joining the fragments in `parts` together
 with commas.
@@ -126,6 +127,7 @@ with commas.
 ```
 
 ### sql.all(parts: Iterable[Fragment]) -> Fragment:
+### sql.all(*parts: Fragment) -> Fragment:
 
 Creates a SQL `Fragment` joining the fragments in `parts` together
 with `AND`.  If `parts` is empty, returns `TRUE`.
@@ -139,6 +141,7 @@ with `AND`.  If `parts` is empty, returns `TRUE`.
 ```
 
 ### sql.any(parts: Iterable[Fragment]) -> Fragment:
+### sql.any(*parts: Fragment) -> Fragment:
 
 Creates a SQL `Fragment` joining the fragments in `parts` together
 with `OR`.  If `parts` is empty, returns `FALSE`.

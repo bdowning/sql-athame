@@ -14,6 +14,7 @@ from typing import (
     Tuple,
     Union,
     cast,
+    overload,
 )
 
 from .escape import escape
@@ -239,16 +240,43 @@ class SQLFormatter:
         else:
             return lit(f"{quote_identifier(name)}")
 
-    @staticmethod
-    def all(parts: Iterable[Fragment]) -> Fragment:
+    @overload
+    def all(self, parts: Iterable[Fragment]) -> Fragment:
+        ...
+
+    @overload
+    def all(self, *parts: Fragment) -> Fragment:
+        ...
+
+    def all(self, *parts) -> Fragment:  # type: ignore
+        if parts and not isinstance(parts[0], Fragment):
+            parts = parts[0]
         return any_all(list(parts), "AND", "TRUE")
 
-    @staticmethod
-    def any(parts: Iterable[Fragment]) -> Fragment:
+    @overload
+    def any(self, parts: Iterable[Fragment]) -> Fragment:
+        ...
+
+    @overload
+    def any(self, *parts: Fragment) -> Fragment:
+        ...
+
+    def any(self, *parts) -> Fragment:  # type: ignore
+        if parts and not isinstance(parts[0], Fragment):
+            parts = parts[0]
         return any_all(list(parts), "OR", "FALSE")
 
-    @staticmethod
-    def list(parts: Iterable[Fragment]) -> Fragment:
+    @overload
+    def list(self, parts: Iterable[Fragment]) -> Fragment:
+        ...
+
+    @overload
+    def list(self, *parts: Fragment) -> Fragment:
+        ...
+
+    def list(self, *parts) -> Fragment:  # type: ignore
+        if parts and not isinstance(parts[0], Fragment):
+            parts = parts[0]
         return Fragment(list(join_parts(parts, infix=", ")), {})
 
     @staticmethod

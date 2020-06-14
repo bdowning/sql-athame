@@ -83,6 +83,16 @@ def test_all_any_list():
     assert_that(list(sql.list([sql("a"), sql("b"), sql("c")]))).is_equal_to(["a, b, c"])
 
 
+def test_all_any_list_star():
+    assert_that(list(sql.all(sql("a"), sql("b"), sql("c")))).is_equal_to(
+        ["(a) AND (b) AND (c)"]
+    )
+    assert_that(list(sql.any(sql("a"), sql("b"), sql("c")))).is_equal_to(
+        ["(a) OR (b) OR (c)"]
+    )
+    assert_that(list(sql.list(sql("a"), sql("b"), sql("c")))).is_equal_to(["a, b, c"])
+
+
 def test_repeated_value_keyword():
     assert_that(sql("SELECT {a}, {b}, {a}", a="a", b="b").query()).is_equal_to(
         ("SELECT $1, $2, $1", ["a", "b"])
@@ -165,6 +175,21 @@ def test_any_all():
         ["(a) AND (b) AND (c)"]
     )
     assert_that(list(sql.any([sql("a"), sql("b"), sql("c")]))).is_equal_to(
+        ["(a) OR (b) OR (c)"]
+    )
+
+
+def test_any_all_star():
+    assert_that(list(sql.all())).is_equal_to(["TRUE"])
+    assert_that(list(sql.any())).is_equal_to(["FALSE"])
+
+    assert_that(list(sql.all(sql("a")))).is_equal_to(["(a)"])
+    assert_that(list(sql.any(sql("a")))).is_equal_to(["(a)"])
+
+    assert_that(list(sql.all(sql("a"), sql("b"), sql("c")))).is_equal_to(
+        ["(a) AND (b) AND (c)"]
+    )
+    assert_that(list(sql.any(sql("a"), sql("b"), sql("c")))).is_equal_to(
         ["(a) OR (b) OR (c)"]
     )
 
