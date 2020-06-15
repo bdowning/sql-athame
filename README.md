@@ -62,7 +62,7 @@ superquery = sql(
  50]
 ```
 
-### API Reference
+### API reference
 
 ```python
 from sql_athame import sql
@@ -104,7 +104,7 @@ ValueError: Unfilled slot: 'qty'
 ('SELECT * FROM tbl WHERE qty > $1', [10])
 ```
 
-#### Fragment.\_\_iter\_\_(self) -> Iterator[Any]:
+#### Fragment.\_\_iter\_\_(self) -> Iterator[Any]
 
 A `Fragment` is an iterable which will return the query string
 followed by the placeholder parameters as returned by
@@ -116,8 +116,8 @@ q = sql("SELECT * FROM tbl WHERE qty > {}", 10)
 await conn.fetch(*q)
 ```
 
-#### sql.list(parts: Iterable[Fragment]) -> Fragment:
-#### sql.list(*parts: Fragment) -> Fragment:
+#### sql.list(parts: Iterable[Fragment]) -> Fragment
+#### sql.list(*parts: Fragment) -> Fragment
 
 Creates a SQL `Fragment` joining the fragments in `parts` together
 with commas.
@@ -128,8 +128,8 @@ with commas.
 ['SELECT a, b, c FROM tbl']
 ```
 
-#### sql.all(parts: Iterable[Fragment]) -> Fragment:
-#### sql.all(*parts: Fragment) -> Fragment:
+#### sql.all(parts: Iterable[Fragment]) -> Fragment
+#### sql.all(*parts: Fragment) -> Fragment
 
 Creates a SQL `Fragment` joining the fragments in `parts` together
 with `AND`.  If `parts` is empty, returns `TRUE`.
@@ -142,8 +142,8 @@ with `AND`.  If `parts` is empty, returns `TRUE`.
 ['SELECT * FROM tbl WHERE TRUE']
 ```
 
-#### sql.any(parts: Iterable[Fragment]) -> Fragment:
-#### sql.any(*parts: Fragment) -> Fragment:
+#### sql.any(parts: Iterable[Fragment]) -> Fragment
+#### sql.any(*parts: Fragment) -> Fragment
 
 Creates a SQL `Fragment` joining the fragments in `parts` together
 with `OR`.  If `parts` is empty, returns `FALSE`.
@@ -156,7 +156,7 @@ with `OR`.  If `parts` is empty, returns `FALSE`.
 ['SELECT * FROM tbl WHERE FALSE']
 ```
 
-#### Fragment.join(self, parts: Iterable[Fragment]) -> Fragment:
+#### Fragment.join(self, parts: Iterable[Fragment]) -> Fragment
 
 Creates a SQL `Fragment` by joining the fragments in `parts` together
 with `self`.
@@ -220,6 +220,22 @@ Equivalent to:
 
 ```python
 sql("{name}")
+```
+
+#### sql.unnest(data: Iterable[Sequence[Any]], types: Iterable[str]) -> Fragment
+
+Creates a SQL `Fragment` containing an `UNNEST` expression with
+associated data.
+
+The data is specified in tuples (in the "several database columns"
+sense, not necessarily the Python sense) in `data`, and the tuple
+Postgres types must be specified in `types`.  The data is transposed
+into the correct form for `UNNEST` and embedded in placeholders in the
+`Fragment`.
+
+```python
+>>> list(sql("SELECT * FROM {}", sql.unnest([("a", 1), ("b", 2), ("c", 3)], ["text", "integer"])))
+['SELECT * FROM UNNEST($1::text[], $2::integer[])', ('a', 'b', 'c'), (1, 2, 3)]
 ```
 
 #### Fragment.fill(self, \*\*kwargs) -> Fragment
