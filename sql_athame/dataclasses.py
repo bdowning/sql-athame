@@ -229,15 +229,24 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
-    def select_sql(cls, where: Where = (), for_update=False) -> Fragment:
+    def select_sql(
+        cls, where: Where = (), order_by: Union[FieldNames, str] = (), for_update=False
+    ) -> Fragment:
+        if isinstance(order_by, str):
+            order_by = (order_by,)
         if not isinstance(where, Fragment):
             where = sql.all(where)
         cached = cls._cached(
-            ("select_sql",),
+            ("select_sql", tuple(order_by)),
             lambda: sql(
-                "SELECT {fields} FROM {name} WHERE {where}",
+                "SELECT {fields} FROM {name} WHERE {where}{order}",
                 fields=sql.list(cls.field_names_sql()),
                 name=cls.table_name_sql(),
+                order=(
+                    sql(" ORDER BY {}", sql.list(sql.identifier(x) for x in order_by))
+                    if order_by
+                    else sql.literal("")
+                ),
             ).compile(),
         )
         query = cached(where=where)
@@ -247,21 +256,29 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def select_cursor(
-        cls: Type[T], connection, for_update=False, where: Where = ()
+        cls: Type[T],
+        connection,
+        order_by: Union[FieldNames, str] = (),
+        for_update=False,
+        where: Where = (),
     ) -> AsyncGenerator[T, None]:
         async for row in connection.cursor(
-            *cls.select_sql(for_update=for_update, where=where)
+            *cls.select_sql(order_by=order_by, for_update=for_update, where=where)
         ):
             yield cls(**row)  # type: ignore
 
     @classmethod
     async def select(
-        cls: Type[T], connection_or_pool, for_update=False, where: Where = ()
+        cls: Type[T],
+        connection_or_pool,
+        order_by: Union[FieldNames, str] = (),
+        for_update=False,
+        where: Where = (),
     ) -> List[T]:
         return [
             cls(**row)  # type: ignore
             for row in await connection_or_pool.fetch(
-                *cls.select_sql(for_update=for_update, where=where)
+                *cls.select_sql(order_by=order_by, for_update=for_update, where=where)
             )
         ]
 

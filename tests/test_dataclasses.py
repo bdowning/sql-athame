@@ -35,8 +35,19 @@ def test_modelclass():
     assert_that(list(Test.select_sql())).is_equal_to(
         ['SELECT "foo", "bar" FROM "table" WHERE TRUE']
     )
+    assert_that(list(Test.select_sql(order_by="bar"))).is_equal_to(
+        ['SELECT "foo", "bar" FROM "table" WHERE TRUE ORDER BY "bar"']
+    )
+    assert_that(list(Test.select_sql(order_by=("bar", "foo")))).is_equal_to(
+        ['SELECT "foo", "bar" FROM "table" WHERE TRUE ORDER BY "bar", "foo"']
+    )
     assert_that(list(Test.select_sql(for_update=True))).is_equal_to(
         ['SELECT "foo", "bar" FROM "table" WHERE TRUE FOR UPDATE']
+    )
+    assert_that(
+        list(Test.select_sql(order_by=("bar", "foo"), for_update=True))
+    ).is_equal_to(
+        ['SELECT "foo", "bar" FROM "table" WHERE TRUE ORDER BY "bar", "foo" FOR UPDATE']
     )
     assert_that(list(t.insert_sql())).is_equal_to(
         ['INSERT INTO "table" ("foo", "bar") VALUES ($1, $2)', 42, "hi"]
