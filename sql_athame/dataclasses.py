@@ -400,7 +400,9 @@ class ModelBase(Mapping[str, Any]):
         updated = []
         deleted = []
 
-        async for old in cls.select_cursor(connection, where=where, for_update=True):
+        async for old in cls.select_cursor(
+            connection, where=where, order_by=cls.primary_key_names, for_update=True
+        ):
             pk = old.primary_key()
             if pk not in pending:
                 deleted.append(old)
