@@ -67,7 +67,7 @@ workflows:
               only: /^v.*/
           matrix:
             parameters:
-              python_version: ["3.7", "3.8"]
+              python_version: ["3.7", "3.8", "3.9"]
       - publish:
           requires:
             - test
