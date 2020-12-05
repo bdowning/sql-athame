@@ -195,8 +195,8 @@ sql("{}", value)
 #### sql.escape(value: Any) -> Fragment
 
 Creates a SQL `Fragment` with `value` escaped and embedded into the
-SQL.  Types currently supported are strings, floats, ints, UUIDs, and
-sequences of the above.
+SQL.  Types currently supported are strings, floats, ints, UUIDs,
+`None`, and sequences of the above.
 
 ```python
 >>> list(sql("SELECT * FROM tbl WHERE qty = ANY({})", sql.escape([1, 3, 5])))

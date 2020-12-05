@@ -17,3 +17,7 @@ def escape(value: Any):
     elif isinstance(value, Sequence):
         args = ", ".join(escape(x) for x in value)
         return f"ARRAY[{args}]"
+    elif value is None:
+        return "NULL"
+    else:
+        raise TypeError(f"Can't escape type {type(value)}")

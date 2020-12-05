@@ -307,3 +307,9 @@ def test_escape():
 
     query = sql("SELECT {}", sql.escape(["str", "funky\nstring"]))
     assert_that(list(query)).is_equal_to(["SELECT ARRAY[E'str', E'funky\\nstring']"])
+
+    query = sql("SELECT {}", sql.escape(None))
+    assert_that(list(query)).is_equal_to(["SELECT NULL"])
+
+    with pytest.raises(TypeError):
+        query = sql("SELECT {}", sql.escape({}))
