@@ -7,6 +7,7 @@ from typing import (
     Callable,
     Dict,
     Iterable,
+    Iterator,
     List,
     Mapping,
     Optional,
@@ -24,6 +25,9 @@ Where = Union[Fragment, Iterable[Fragment]]
 SequenceOfStrings = Union[List[str], Tuple[str, ...]]
 FieldNames = SequenceOfStrings
 FieldNamesSet = Union[SequenceOfStrings, Set[str]]
+
+Connection = Any
+Pool = Any
 
 
 @dataclass
@@ -47,7 +51,9 @@ def model_field_metadata(
     return {"sql_athame": info}
 
 
-def model_field(*, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs):
+def model_field(
+    *, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs: Any
+) -> Any:
     return field(**kwargs, metadata=model_field_metadata(type, constraints))  # type: ignore
 
 
@@ -96,7 +102,7 @@ class ModelBase(Mapping[str, Any]):
     primary_key_names: Tuple[str, ...]
 
     def __init_subclass__(
-        cls, *, table_name: str, primary_key: Union[FieldNames, str] = (), **kwargs
+        cls, *, table_name: str, primary_key: Union[FieldNames, str] = (), **kwargs: Any
     ):
         cls._cache = {}
         cls.table_name = table_name
@@ -116,16 +122,16 @@ class ModelBase(Mapping[str, Any]):
     def keys(self):
         return self.field_names()
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(self.keys())
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.keys())
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
 
     @classmethod
@@ -137,11 +143,11 @@ class ModelBase(Mapping[str, Any]):
             return cls._column_info[column]
 
     @classmethod
-    def table_name_sql(cls, *, prefix=None) -> Fragment:
+    def table_name_sql(cls, *, prefix: Optional[str] = None) -> Fragment:
         return sql.identifier(cls.table_name, prefix=prefix)
 
     @classmethod
-    def primary_key_names_sql(cls, *, prefix=None) -> List[Fragment]:
+    def primary_key_names_sql(cls, *, prefix: Optional[str] = None) -> List[Fragment]:
         return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_key_names]
 
     @classmethod
@@ -150,7 +156,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def field_names_sql(
-        cls, *, prefix=None, exclude: FieldNamesSet = ()
+        cls, *, prefix: Optional[str] = None, exclude: FieldNamesSet = ()
     ) -> List[Fragment]:
         return [
             sql.identifier(f, prefix=prefix) for f in cls.field_names(exclude=exclude)
@@ -160,7 +166,9 @@ class ModelBase(Mapping[str, Any]):
         return tuple(getattr(self, pk) for pk in self.primary_key_names)
 
     @classmethod
-    def _get_field_values_fn(cls, exclude: FieldNamesSet = ()):
+    def _get_field_values_fn(
+        cls, exclude: FieldNamesSet = ()
+    ) -> Callable[["ModelBase"], List[Any]]:
         env: Dict[str, Any] = dict()
         func = ["def get_field_values(self): return ["]
         for f in fields(cls):
@@ -178,7 +186,7 @@ class ModelBase(Mapping[str, Any]):
         return get_field_values(self)
 
     def field_values_sql(
-        self, *, exclude: FieldNamesSet = (), default_none=False
+        self, *, exclude: FieldNamesSet = (), default_none: bool = False
     ) -> List[Fragment]:
         if default_none:
             return [
@@ -190,7 +198,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def from_tuple(
-        cls: Type[T], tup: tuple, *, offset=0, exclude: FieldNamesSet = ()
+        cls: Type[T], tup: tuple, *, offset: int = 0, exclude: FieldNamesSet = ()
     ) -> T:
         names = (f.name for f in fields(cls) if f.name not in exclude)
         kwargs = {name: tup[offset] for offset, name in enumerate(names, start=offset)}
@@ -230,7 +238,10 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def select_sql(
-        cls, where: Where = (), order_by: Union[FieldNames, str] = (), for_update=False
+        cls,
+        where: Where = (),
+        order_by: Union[FieldNames, str] = (),
+        for_update: bool = False,
     ) -> Fragment:
         if isinstance(order_by, str):
             order_by = (order_by,)
@@ -257,9 +268,9 @@ class ModelBase(Mapping[str, Any]):
     @classmethod
     async def select_cursor(
         cls: Type[T],
-        connection,
+        connection: Connection,
         order_by: Union[FieldNames, str] = (),
-        for_update=False,
+        for_update: bool = False,
         where: Where = (),
     ) -> AsyncGenerator[T, None]:
         async for row in connection.cursor(
@@ -270,9 +281,9 @@ class ModelBase(Mapping[str, Any]):
     @classmethod
     async def select(
         cls: Type[T],
-        connection_or_pool,
+        connection_or_pool: Union[Connection, Pool],
         order_by: Union[FieldNames, str] = (),
-        for_update=False,
+        for_update: bool = False,
         where: Where = (),
     ) -> List[T]:
         return [
@@ -283,7 +294,7 @@ class ModelBase(Mapping[str, Any]):
         ]
 
     @classmethod
-    def create_sql(cls: Type[T], **kwargs) -> Fragment:
+    def create_sql(cls: Type[T], **kwargs: Any) -> Fragment:
         return sql(
             "INSERT INTO {table} ({fields}) VALUES ({values}) RETURNING {out_fields}",
             table=cls.table_name_sql(),
@@ -293,7 +304,9 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
-    async def create(cls: Type[T], connection_or_pool, **kwargs) -> T:
+    async def create(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], **kwargs: Any
+    ) -> T:
         row = await connection_or_pool.fetchrow(*cls.create_sql(**kwargs))
         return cls(**row)  # type: ignore
 
@@ -310,8 +323,10 @@ class ModelBase(Mapping[str, Any]):
             values=sql.list(self.field_values_sql(exclude=exclude, default_none=True)),
         )
 
-    async def insert(self, connection_or_pool, exclude: FieldNamesSet = ()):
-        await connection_or_pool.execute(*self.insert_sql(exclude))
+    async def insert(
+        self, connection_or_pool: Union[Connection, Pool], exclude: FieldNamesSet = ()
+    ) -> str:
+        return await connection_or_pool.execute(*self.insert_sql(exclude))
 
     @classmethod
     def upsert_sql(cls, insert_sql: Fragment, exclude: FieldNamesSet = ()) -> Fragment:
@@ -331,7 +346,9 @@ class ModelBase(Mapping[str, Any]):
         )
         return Fragment([insert_sql, cached], {})
 
-    async def upsert(self, connection_or_pool, exclude: FieldNamesSet = ()) -> bool:
+    async def upsert(
+        self, connection_or_pool: Union[Connection, Pool], exclude: FieldNamesSet = ()
+    ) -> bool:
         query = sql(
             "{} RETURNING xmax",
             self.upsert_sql(self.insert_sql(exclude=exclude), exclude=exclude),
@@ -358,8 +375,10 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
-    async def delete_multiple(cls: Type[T], connection_or_pool, rows: Iterable[T]):
-        await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
+    async def delete_multiple(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> str:
+        return await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
 
     @classmethod
     def insert_multiple_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
@@ -379,17 +398,23 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
-    async def insert_multiple(cls: Type[T], connection_or_pool, rows: Iterable[T]):
-        await connection_or_pool.execute(*cls.insert_multiple_sql(rows))
+    async def insert_multiple(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> str:
+        return await connection_or_pool.execute(*cls.insert_multiple_sql(rows))
 
     @classmethod
-    async def upsert_multiple(cls: Type[T], connection_or_pool, rows: Iterable[T]):
-        await connection_or_pool.execute(*cls.upsert_sql(cls.insert_multiple_sql(rows)))
+    async def upsert_multiple(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> str:
+        return await connection_or_pool.execute(
+            *cls.upsert_sql(cls.insert_multiple_sql(rows))
+        )
 
     @classmethod
     async def replace_multiple(
         cls: Type[T],
-        connection,
+        connection: Connection,
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,

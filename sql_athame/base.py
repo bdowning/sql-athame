@@ -9,6 +9,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -68,7 +69,9 @@ class Fragment:
     parts: List[Part]
     values: Dict[Placeholder, Any]
 
-    def flatten_into(self, parts: List[FlatPart], values: Dict[Placeholder, Any]):
+    def flatten_into(
+        self, parts: List[FlatPart], values: Dict[Placeholder, Any]
+    ) -> None:
         for part in self.parts:
             if isinstance(part, Fragment):
                 part.flatten_into(parts, values)
@@ -117,7 +120,7 @@ class Fragment:
                 out_parts.append(part)
         return Fragment(out_parts, values)
 
-    def fill(self, **kwargs) -> "Fragment":
+    def fill(self, **kwargs: Any) -> "Fragment":
         parts: List[Part] = []
         values: Dict[Placeholder, Any] = {}
         self.flatten_into(cast(List[FlatPart], parts), values)
@@ -129,7 +132,21 @@ class Fragment:
                 )
         return Fragment(parts, values)
 
-    def prep_query(self, allow_slots=False):
+    @overload
+    def prep_query(
+        self, allow_slots: Literal[True]
+    ) -> Tuple[str, Dict[Placeholder, Any], List[Union[Placeholder, Slot]]]:
+        ...
+
+    @overload
+    def prep_query(
+        self, allow_slots: Literal[False] = False
+    ) -> Tuple[str, Dict[Placeholder, Any], List[Placeholder]]:
+        ...
+
+    def prep_query(
+        self, allow_slots: bool = False
+    ) -> Tuple[str, Dict[Placeholder, Any], List[Any]]:
         parts: List[FlatPart] = []
         values: Dict[Placeholder, Any] = {}
         self.flatten_into(parts, values)
@@ -187,7 +204,7 @@ class Fragment:
 
 class SQLFormatter:
     def __call__(
-        self, fmt: str, *args, preserve_formatting=False, **kwargs
+        self, fmt: str, *args: Any, preserve_formatting: bool = False, **kwargs: Any
     ) -> Fragment:
         if not preserve_formatting:
             fmt = newline_whitespace_re.sub(" ", fmt)
@@ -217,7 +234,7 @@ class SQLFormatter:
         return Fragment(parts, values)
 
     @staticmethod
-    def value(value: Any):
+    def value(value: Any) -> Fragment:
         placeholder = Placeholder("value")
         return Fragment([placeholder], {placeholder: value})
 
@@ -230,11 +247,11 @@ class SQLFormatter:
         return Fragment([Slot(name)], {})
 
     @staticmethod
-    def literal(text: str):
+    def literal(text: str) -> Fragment:
         return Fragment([text], {})
 
     @staticmethod
-    def identifier(name: str, prefix: Optional[str] = None):
+    def identifier(name: str, prefix: Optional[str] = None) -> Fragment:
         if prefix:
             return lit(f"{quote_identifier(prefix)}.{quote_identifier(name)}")
         else:
@@ -313,11 +330,11 @@ def nest_for_type(data: Sequence[Any], typename: str) -> Fragment:
         return Fragment([ph, f"::{typename}[]"], {ph: data})
 
 
-def lit(text: str):
+def lit(text: str) -> Fragment:
     return Fragment([text], {})
 
 
-def any_all(frags: List[Fragment], op: str, base_case: str):
+def any_all(frags: List[Fragment], op: str, base_case: str) -> Fragment:
     if not frags:
         return lit(base_case)
     parts = join_parts(frags, prefix="(", infix=f") {op} (", suffix=")")
@@ -340,6 +357,6 @@ def join_parts(
         yield suffix
 
 
-def quote_identifier(name: str):
+def quote_identifier(name: str) -> str:
     quoted = name.replace('"', '""')
     return f'"{quoted}"'

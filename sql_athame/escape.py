@@ -3,7 +3,7 @@ import uuid
 from typing import Any, Sequence
 
 
-def escape(value: Any):
+def escape(value: Any) -> str:
     if isinstance(value, str):
         return f"E{repr(value)}"
     elif isinstance(value, float) or isinstance(value, int):
