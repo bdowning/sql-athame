@@ -622,7 +622,7 @@ python-versions = "*"
 name = "typing-extensions"
 version = "3.7.4.3"
 description = "Backported and Experimental Type Hints for Python 3.5+"
-category = "dev"
+category = "main"
 optional = false
 python-versions = "*"
 
@@ -677,7 +677,7 @@ asyncpg = ["asyncpg"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "dbf6cdf016871a16eaa3a90c1c40e3d0f90606a846ed3587300deb36395b62e0"
+content-hash = "77a7bef5116842e96f97f4a6a762d808e1c7fb7844e47b714d567830ac3f4655"
 
 [metadata.files]
 appdirs = [

@@ -9,7 +9,6 @@ from typing import (
     Iterable,
     Iterator,
     List,
-    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -17,6 +16,8 @@ from typing import (
     cast,
     overload,
 )
+
+from typing_extensions import Literal
 
 from .escape import escape
 
