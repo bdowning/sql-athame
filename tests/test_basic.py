@@ -166,6 +166,11 @@ def test_unnest():
     assert list(query) == ["UNNEST($1::INTEGER[], $2::TEXT[])", (1, 2), ("foo", "bar")]
 
 
+def test_unfilled_positional_arg():
+    with pytest.raises(ValueError, match="unfilled positional argument"):
+        sql("foo {}")
+
+
 @pytest.mark.parametrize(
     "query",
     [

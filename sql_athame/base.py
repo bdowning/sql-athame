@@ -204,6 +204,8 @@ class SQLFormatter:
                     next_auto_field += 1
                 try:
                     value = fmtr.get_field(field_name, args, kwargs)[0]
+                except IndexError as e:
+                    raise ValueError("unfilled positional argument") from e
                 except KeyError:
                     value = Slot(field_name)
                 if isinstance(value, Fragment) or isinstance(value, Slot):
