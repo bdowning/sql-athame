@@ -24,11 +24,9 @@ from .escape import escape
 
 @dataclasses.dataclass(eq=False)
 class Placeholder:
-    __slots__ = ["name"]
+    __slots__ = ["name", "value"]
     name: str
-
-    def __repr__(self):
-        return f"Placeholder(id={id(self)}, name={repr(self.name)})"
+    value: Any
 
 
 @dataclasses.dataclass(frozen=True)
@@ -52,105 +50,90 @@ def auto_numbered(field_name):
 def process_slot_value(
     name: str,
     value: Any,
-    values: Dict[Placeholder, Any],
     placeholders: Dict[str, Placeholder],
 ) -> Union["Fragment", Placeholder]:
     if isinstance(value, Fragment):
         return value
     else:
         if name not in placeholders:
-            placeholders[name] = Placeholder(name)
-            values[placeholders[name]] = value
+            placeholders[name] = Placeholder(name, value)
         return placeholders[name]
 
 
 @dataclasses.dataclass
 class Fragment:
-    __slots__ = ["parts", "values"]
+    __slots__ = ["parts"]
     parts: List[Part]
-    values: Dict[Placeholder, Any]
 
-    def flatten_into(
-        self, parts: List[FlatPart], values: Dict[Placeholder, Any]
-    ) -> None:
+    def flatten_into(self, parts: List[FlatPart]) -> None:
         for part in self.parts:
             if isinstance(part, Fragment):
-                part.flatten_into(parts, values)
-            elif isinstance(part, Placeholder):
-                parts.append(part)
-                values[part] = self.values[part]
+                part.flatten_into(parts)
             else:
                 parts.append(part)
 
     def compile(self) -> Callable[..., "Fragment"]:
         flattened = self.flatten()
         env = dict(
-            in_values=flattened.values,
             process_slot_value=process_slot_value,
             Fragment=Fragment,
         )
         func = [
             "def compiled(**slots):",
-            " values = in_values.copy()",
             " placeholders = {}",
             " return Fragment([",
         ]
         for i, part in enumerate(flattened.parts):
             if isinstance(part, Slot):
                 func.append(
-                    f"  process_slot_value({repr(part.name)}, slots[{repr(part.name)}], values, placeholders),"
+                    f"  process_slot_value({repr(part.name)}, slots[{repr(part.name)}], placeholders),"
                 )
             elif isinstance(part, str):
                 func.append(f"  {repr(part)},")
             else:
                 env[f"part_{i}"] = part
                 func.append(f"  part_{i},")
-        func += [" ], values)"]
+        func += [" ])"]
         exec("\n".join(func), env)
         return env["compiled"]  # type: ignore
 
     def flatten(self) -> "Fragment":
         parts: List[FlatPart] = []
-        values: Dict[Placeholder, Any] = {}
-        self.flatten_into(parts, values)
+        self.flatten_into(parts)
         out_parts: List[Part] = []
         for part in parts:
             if isinstance(part, str) and out_parts and isinstance(out_parts[-1], str):
                 out_parts[-1] += part
             else:
                 out_parts.append(part)
-        return Fragment(out_parts, values)
+        return Fragment(out_parts)
 
     def fill(self, **kwargs: Any) -> "Fragment":
         parts: List[Part] = []
-        values: Dict[Placeholder, Any] = {}
-        self.flatten_into(cast(List[FlatPart], parts), values)
+        self.flatten_into(cast(List[FlatPart], parts))
         placeholders: Dict[str, Placeholder] = {}
         for i, part in enumerate(parts):
             if isinstance(part, Slot):
                 parts[i] = process_slot_value(
-                    part.name, kwargs[part.name], values, placeholders
+                    part.name, kwargs[part.name], placeholders
                 )
-        return Fragment(parts, values)
+        return Fragment(parts)
 
     @overload
     def prep_query(
         self, allow_slots: Literal[True]
-    ) -> Tuple[str, Dict[Placeholder, Any], List[Union[Placeholder, Slot]]]:
+    ) -> Tuple[str, List[Union[Placeholder, Slot]]]:
         ...
 
     @overload
     def prep_query(
         self, allow_slots: Literal[False] = False
-    ) -> Tuple[str, Dict[Placeholder, Any], List[Placeholder]]:
+    ) -> Tuple[str, List[Placeholder]]:
         ...
 
-    def prep_query(
-        self, allow_slots: bool = False
-    ) -> Tuple[str, Dict[Placeholder, Any], List[Any]]:
+    def prep_query(self, allow_slots: bool = False) -> Tuple[str, List[Any]]:
         parts: List[FlatPart] = []
-        values: Dict[Placeholder, Any] = {}
-        self.flatten_into(parts, values)
+        self.flatten_into(parts)
         args: List[Union[Placeholder, Slot]] = []
         placeholder_ids: Dict[Placeholder, int] = {}
         slot_ids: Dict[Slot, int] = {}
@@ -171,15 +154,15 @@ class Fragment:
             else:
                 assert isinstance(part, str)
                 out_parts.append(part)
-        return "".join(out_parts).strip(), values, args
+        return "".join(out_parts).strip(), args
 
     def query(self) -> Tuple[str, List[Any]]:
-        query, values, args = self.prep_query()
-        placeholder_values = [values[arg] for arg in args]
+        query, args = self.prep_query()
+        placeholder_values = [arg.value for arg in args]
         return query, placeholder_values
 
     def prepare(self) -> Tuple[str, Callable[..., List[Any]]]:
-        query, values, args = self.prep_query(allow_slots=True)
+        query, args = self.prep_query(allow_slots=True)
         env = dict()
         func = [
             "def generate_args(**kwargs):",
@@ -189,7 +172,7 @@ class Fragment:
             if isinstance(arg, Slot):
                 func.append(f"  kwargs[{repr(arg.name)}],")
             else:
-                env[f"value_{i}"] = values[arg]
+                env[f"value_{i}"] = arg.value
                 func.append(f"  value_{i},")
         func += [" ]"]
         exec("\n".join(func), env)
@@ -200,7 +183,7 @@ class Fragment:
         return iter((sql, *args))
 
     def join(self, parts: Iterable["Fragment"]) -> "Fragment":
-        return Fragment(list(join_parts(parts, infix=self)), {})
+        return Fragment(list(join_parts(parts, infix=self)))
 
 
 class SQLFormatter:
@@ -211,7 +194,6 @@ class SQLFormatter:
             fmt = newline_whitespace_re.sub(" ", fmt)
         fmtr = string.Formatter()
         parts: List[Part] = []
-        values: Dict[Placeholder, Any] = {}
         placeholders: Dict[str, Placeholder] = {}
         next_auto_field = 0
         for literal_text, field_name, format_spec, conversion in fmtr.parse(fmt):
@@ -228,16 +210,14 @@ class SQLFormatter:
                     parts.append(value)
                 else:
                     if field_name not in placeholders:
-                        placeholders[field_name] = Placeholder(field_name)
-                    part = placeholders[field_name]
-                    parts.append(part)
-                    values[part] = value
-        return Fragment(parts, values)
+                        placeholders[field_name] = Placeholder(field_name, value)
+                    parts.append(placeholders[field_name])
+        return Fragment(parts)
 
     @staticmethod
     def value(value: Any) -> Fragment:
-        placeholder = Placeholder("value")
-        return Fragment([placeholder], {placeholder: value})
+        placeholder = Placeholder("value", value)
+        return Fragment([placeholder])
 
     @staticmethod
     def escape(value: Any) -> Fragment:
@@ -245,11 +225,11 @@ class SQLFormatter:
 
     @staticmethod
     def slot(name: str) -> Fragment:
-        return Fragment([Slot(name)], {})
+        return Fragment([Slot(name)])
 
     @staticmethod
     def literal(text: str) -> Fragment:
-        return Fragment([text], {})
+        return Fragment([text])
 
     @staticmethod
     def identifier(name: str, prefix: Optional[str] = None) -> Fragment:
@@ -295,14 +275,14 @@ class SQLFormatter:
     def list(self, *parts) -> Fragment:  # type: ignore
         if parts and not isinstance(parts[0], Fragment):
             parts = parts[0]
-        return Fragment(list(join_parts(parts, infix=", ")), {})
+        return Fragment(list(join_parts(parts, infix=", ")))
 
     @staticmethod
     def unnest(data: Iterable[Sequence[Any]], types: Iterable[str]) -> Fragment:
         nested = list(nest_for_type(x, t) for x, t in zip(zip(*data), types))
         if not nested:
             nested = list(nest_for_type([], t) for t in types)
-        return Fragment(["UNNEST(", sql.list(nested), ")"], {})
+        return Fragment(["UNNEST(", sql.list(nested), ")"])
 
 
 sql = SQLFormatter()
@@ -316,8 +296,6 @@ def is_json_type(typename: str) -> bool:
 
 
 def nest_for_type(data: Sequence[Any], typename: str) -> Fragment:
-    ph = Placeholder("data")
-
     if is_json_type(typename):
         # https://github.com/MagicStack/asyncpg/issues/345
 
@@ -326,20 +304,22 @@ def nest_for_type(data: Sequence[Any], typename: str) -> Fragment:
         processed_data = [
             x if x is None or isinstance(x, str) else json.dumps(x) for x in data
         ]
-        return Fragment([ph, f"::TEXT[]::{typename}[]"], {ph: processed_data})
+        return Fragment(
+            [Placeholder("data", processed_data), f"::TEXT[]::{typename}[]"]
+        )
     else:
-        return Fragment([ph, f"::{typename}[]"], {ph: data})
+        return Fragment([Placeholder("data", data), f"::{typename}[]"])
 
 
 def lit(text: str) -> Fragment:
-    return Fragment([text], {})
+    return Fragment([text])
 
 
 def any_all(frags: List[Fragment], op: str, base_case: str) -> Fragment:
     if not frags:
         return lit(base_case)
     parts = join_parts(frags, prefix="(", infix=f") {op} (", suffix=")")
-    return Fragment(list(parts), {})
+    return Fragment(list(parts))
 
 
 def join_parts(

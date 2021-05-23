@@ -262,7 +262,7 @@ class ModelBase(Mapping[str, Any]):
         )
         query = cached(where=where)
         if for_update:
-            query = Fragment([query, " FOR UPDATE"], {})
+            query = Fragment([query, " FOR UPDATE"])
         return query
 
     @classmethod
@@ -344,7 +344,7 @@ class ModelBase(Mapping[str, Any]):
                 ),
             ).flatten(),
         )
-        return Fragment([insert_sql, cached], {})
+        return Fragment([insert_sql, cached])
 
     async def upsert(
         self, connection_or_pool: Union[Connection, Pool], exclude: FieldNamesSet = ()
