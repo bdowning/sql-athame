@@ -199,11 +199,18 @@ def test_slots_same_id_placeholder():
 
 
 def test_slots_compiled():
-    query = sql("SELECT * FROM foo WHERE id = {id}")
+    query = sql("SELECT * FROM foo WHERE id = {id} AND bar = {}", 42)
     fn = query.compile()
-    assert list(fn(id="foo")) == ["SELECT * FROM foo WHERE id = $1", "foo"]
+    assert list(fn(id="foo")) == [
+        "SELECT * FROM foo WHERE id = $1 AND bar = $2",
+        "foo",
+        42,
+    ]
 
-    assert list(fn(id=sql.literal("foo"))) == ["SELECT * FROM foo WHERE id = foo"]
+    assert list(fn(id=sql.literal("foo"))) == [
+        "SELECT * FROM foo WHERE id = foo AND bar = $1",
+        42,
+    ]
 
 
 def test_slots_compiled_same_id_placeholder():
