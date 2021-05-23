@@ -17,7 +17,6 @@ asyncpg = { version = "*", optional = true }
 typing-extensions = "*"
 
 [tool.poetry.dev-dependencies]
-assertpy = "*"
 black = {version = "*", allow-prereleases = true}
 isort = "*"
 pytest = "*"
