@@ -5,7 +5,6 @@ from typing import Optional
 
 import asyncpg
 import pytest
-from assertpy import assert_that
 
 from sql_athame import ModelBase, model_field_metadata, sql
 
@@ -41,15 +40,15 @@ async def tables(conn):
 
 @pytest.mark.asyncio
 async def test_connection(conn):
-    assert_that(await conn.fetchval("SELECT 2 + 2")).is_equal_to(4)
+    assert await conn.fetchval("SELECT 2 + 2") == 4
 
 
 @pytest.mark.asyncio
 async def test_select(conn, tables):
-    assert_that(await conn.fetch("SELECT * FROM table1")).is_length(0)
+    assert len(await conn.fetch("SELECT * FROM table1")) == 0
     await Table1(42, "foo").insert(conn)
     res = await conn.fetchrow("SELECT * FROM table1")
-    assert_that(list(res.keys())).is_equal_to(["a", "b"])
+    assert list(res.keys()) == ["a", "b"]
 
 
 @pytest.mark.asyncio
@@ -70,16 +69,16 @@ async def test_replace_multiple(conn):
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
-    assert_that(c and u).is_false()
-    assert_that(d).is_length(3)
-    assert_that(await Test.select(conn)).is_empty()
+    assert not c and not u
+    assert len(d) == 3
+    assert await Test.select(conn) == []
 
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=sql("a = 1"))
-    assert_that(c and u).is_false()
-    assert_that(d).is_length(2)
-    assert_that([x.id for x in await Test.select(conn)]).is_equal_to([3])
+    assert not c and not u
+    assert len(d) == 2
+    assert [x.id for x in await Test.select(conn)] == [3]
 
     await conn.execute("DELETE FROM test")
     await Test.insert_multiple(conn, data)
@@ -87,12 +86,14 @@ async def test_replace_multiple(conn):
     c, u, d = await Test.replace_multiple(
         conn, [Test(1, 5, "apples"), Test(4, 6, "fred")], where=sql("a = 1")
     )
-    assert_that(c).is_length(1)
-    assert_that(u).is_length(1)
-    assert_that(d).is_length(1)
-    assert_that(list(sorted(await Test.select(conn)))).is_equal_to(
-        [Test(1, 5, "apples"), Test(3, 2, "quux"), Test(4, 6, "fred")]
-    )
+    assert len(c) == 1
+    assert len(u) == 1
+    assert len(d) == 1
+    assert list(sorted(await Test.select(conn))) == [
+        Test(1, 5, "apples"),
+        Test(3, 2, "quux"),
+        Test(4, 6, "fred"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -116,12 +117,14 @@ async def test_replace_multiple_multicolumn_pk(conn):
     c, u, d = await Test.replace_multiple(
         conn, [Test(1, 1, 5, "apples"), Test(2, 4, 6, "fred")], where=sql("a = 1")
     )
-    assert_that(c).is_length(1)
-    assert_that(u).is_length(1)
-    assert_that(d).is_length(1)
-    assert_that(list(sorted(await Test.select(conn)))).is_equal_to(
-        [Test(1, 1, 5, "apples"), Test(1, 3, 2, "quux"), Test(2, 4, 6, "fred")]
-    )
+    assert len(c) == 1
+    assert len(u) == 1
+    assert len(d) == 1
+    assert list(sorted(await Test.select(conn))) == [
+        Test(1, 1, 5, "apples"),
+        Test(1, 3, 2, "quux"),
+        Test(2, 4, 6, "fred"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -134,13 +137,11 @@ async def test_serial(conn):
 
     await conn.execute(*Test.create_table_sql())
     t = await Test.create(conn, foo=42, bar="bar")
-    assert_that(t).is_equal_to(Test(1, 42, "bar"))
+    assert t == Test(1, 42, "bar")
     t = await Test.create(conn, foo=42, bar="bar")
-    assert_that(t).is_equal_to(Test(2, 42, "bar"))
+    assert t == Test(2, 42, "bar")
 
-    assert_that(list(await Test.select(conn))).is_equal_to(
-        [Test(1, 42, "bar"), Test(2, 42, "bar")]
-    )
+    assert list(await Test.select(conn)) == [Test(1, 42, "bar"), Test(2, 42, "bar")]
 
 
 @pytest.mark.asyncio
@@ -164,10 +165,10 @@ async def test_unnest_json(conn):
 
     await Test.insert_multiple(conn, rows)
 
-    assert_that(list(await Test.select(conn))).is_equal_to(rows)
-    assert_that(
-        list(await conn.fetchrow('SELECT COUNT(*) FROM "table" WHERE json IS NULL'))
-    ).is_equal_to([1])
+    assert list(await Test.select(conn)) == rows
+    assert list(
+        await conn.fetchrow('SELECT COUNT(*) FROM "table" WHERE json IS NULL')
+    ) == [1]
 
 
 @pytest.mark.asyncio
@@ -180,4 +181,4 @@ async def test_unnest_empty(conn):
 
     await Test.insert_multiple(conn, [])
 
-    assert_that(list(await Test.select(conn))).is_equal_to([])
+    assert list(await Test.select(conn)) == []
