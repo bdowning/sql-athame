@@ -20,24 +20,8 @@ from typing import (
 from typing_extensions import Literal
 
 from .escape import escape
-
-
-@dataclasses.dataclass(eq=False)
-class Placeholder:
-    __slots__ = ["name", "value"]
-    name: str
-    value: Any
-
-
-@dataclasses.dataclass(frozen=True)
-class Slot:
-    __slots__ = ["name"]
-    name: str
-
-
-Part = Union[str, Placeholder, Slot, "Fragment"]
-FlatPart = Union[str, Placeholder, Slot]
-
+from .sqlalchemy import sqlalchemy_text_from_fragment
+from .types import FlatPart, Part, Placeholder, Slot
 
 newline_whitespace_re = re.compile(r"\s*\n\s*")
 auto_numbered_re = re.compile(r"[A-Za-z0-9_]")
@@ -160,6 +144,9 @@ class Fragment:
         query, args = self.prep_query()
         placeholder_values = [arg.value for arg in args]
         return query, placeholder_values
+
+    def sqlalchemy_text(self) -> Any:
+        return sqlalchemy_text_from_fragment(self)
 
     def prepare(self) -> Tuple[str, Callable[..., List[Any]]]:
         query, args = self.prep_query(allow_slots=True)

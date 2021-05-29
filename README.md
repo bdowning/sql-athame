@@ -1,7 +1,8 @@
 # sql-athame
 
 Python tool for slicing and dicing SQL.  Its intended target is
-Postgres with _asyncpg_.
+Postgres with _asyncpg_, though it also includes support for rendering
+to a SQLAlchemy `TextClause`.
 
 ## Base query builder
 
@@ -276,6 +277,38 @@ query, query_args = sql("UPDATE tbl SET foo={foo}, bar={bar} WHERE baz < {baz}",
 stmt = await conn.prepare(query)
 await stmt.execute(*query_args(foo=1, bar=2))
 await stmt.execute(*query_args(bar=42, foo=3))
+```
+
+#### Fragment.sqlalchemy_text(self) -> sqlalchemy.sql.expression.TextClause
+
+Renders `self` into a SQLAlchemy `TextClause`.  Placeholder values
+will be bound with `bindparams`.  Unfilled slots will be included as
+unbound parameters with their keys equal to the slot names.  A
+placeholder value may be a SQLAlchemy `BindParameter`, in which case
+its value and type are used for the parameter created by this (and the
+key name is ignored); this allow control of the SQLAlchemy type used
+for the parameter.
+
+Requires SQLAlchemy to be installed, otherwise raises `ImportError`.
+
+```python
+>>> query = sql("SELECT * FROM tbl WHERE column = {}", 42)
+>>> stmt = query.sqlalchemy_text()
+>>> stmt._bindparams
+{'_arg_0_140685932797232': BindParameter('_arg_0_140685932797232', 42, type_=Integer())}
+>>> conn.execute(stmt).fetchall()
+
+>>> query = sql("SELECT * FROM tbl WHERE column = {}", bindparam("ignored", 42, type_=Float()))
+>>> stmt = query.sqlalchemy_text()
+>>> stmt._bindparams
+{'_arg_0_140294062155280': BindParameter('_arg_0_140294062155280', 42, type_=Float())}
+>>> conn.execute(stmt).fetchall()
+
+>>> query = sql("SELECT * FROM tbl WHERE column = {val}")
+>>> stmt = query.sqlalchemy_text()
+>>> stmt._bindparams
+{'val': BindParameter('val', None, type_=NullType())}
+>>> conn.execute(stmt, val=42).fetchall()
 ```
 
 ## Dataclass helpers
