@@ -272,9 +272,11 @@ class ModelBase(Mapping[str, Any]):
         order_by: Union[FieldNames, str] = (),
         for_update: bool = False,
         where: Where = (),
+        prefetch: int = 1000,
     ) -> AsyncGenerator[T, None]:
         async for row in connection.cursor(
-            *cls.select_sql(order_by=order_by, for_update=for_update, where=where)
+            *cls.select_sql(order_by=order_by, for_update=for_update, where=where),
+            prefetch=prefetch,
         ):
             yield cls(**row)  # type: ignore
 
