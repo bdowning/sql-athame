@@ -447,14 +447,10 @@ class ModelBase(Mapping[str, Any]):
 
         return created, updated, deleted
 
-
-def equal_ignoring(
-    old: Mapping[str, Any], new: Mapping[str, Any], ignore: FieldNamesSet
-) -> bool:
-    keys = (*old.keys(), *new.keys())
-    for key in keys:
-        if key in ignore:
+def equal_ignoring(old: T, new: T, ignore: FieldNamesSet) -> bool:
+    for f in fields(old):
+        if f.name in ignore:
             continue
-        if old.get(key, None) != new.get(key, None):
+        if getattr(old, f.name) != getattr(new, f.name):
             return False
     return True
