@@ -447,6 +447,44 @@ class ModelBase(Mapping[str, Any]):
 
         return created, updated, deleted
 
+    @classmethod
+    async def replace_multiple_reporting_differences(
+        cls: Type[T],
+        connection: Connection,
+        rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
+        *,
+        where: Where,
+        ignore: FieldNamesSet = (),
+    ) -> Tuple[List[T], List[Tuple[T, T, List[str]]], List[T]]:
+        pending = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
+
+        updated_triples = []
+        deleted = []
+
+        async for old in cls.select_cursor(
+            connection, where=where, order_by=cls.primary_key_names, for_update=True
+        ):
+            pk = old.primary_key()
+            if pk not in pending:
+                deleted.append(old)
+            else:
+                diffs = differences_ignoring(old, pending[pk], ignore)
+                if diffs:
+                    updated_triples.append((old, pending[pk], diffs))
+                del pending[pk]
+
+        created = list(pending.values())
+
+        if created or updated_triples:
+            await cls.upsert_multiple(
+                connection, (*created, *(t[1] for t in updated_triples))
+            )
+        if deleted:
+            await cls.delete_multiple(connection, deleted)
+
+        return created, updated_triples, deleted
+
+
 def equal_ignoring(old: T, new: T, ignore: FieldNamesSet) -> bool:
     for f in fields(old):
         if f.name in ignore:
@@ -454,3 +492,13 @@ def equal_ignoring(old: T, new: T, ignore: FieldNamesSet) -> bool:
         if getattr(old, f.name) != getattr(new, f.name):
             return False
     return True
+
+
+def differences_ignoring(old: T, new: T, ignore: FieldNamesSet) -> List[str]:
+    diffs = []
+    for f in fields(old):
+        if f.name in ignore:
+            continue
+        if getattr(old, f.name) != getattr(new, f.name):
+            diffs.append(f.name)
+    return diffs
