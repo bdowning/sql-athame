@@ -167,8 +167,8 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def _get_field_values_fn(
-        cls, exclude: FieldNamesSet = ()
-    ) -> Callable[["ModelBase"], List[Any]]:
+        cls: Type[T], exclude: FieldNamesSet = ()
+    ) -> Callable[[T], List[Any]]:
         env: Dict[str, Any] = dict()
         func = ["def get_field_values(self): return ["]
         for f in fields(cls):
