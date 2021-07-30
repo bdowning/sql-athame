@@ -414,6 +414,19 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
+    def _get_equal_ignoring_fn(
+        cls: Type[T], ignore: FieldNamesSet = ()
+    ) -> Callable[[T, T], bool]:
+        env: Dict[str, Any] = dict()
+        func = ["def equal_ignoring(a, b):"]
+        for f in fields(cls):
+            if f.name not in ignore:
+                func.append(f" if a.{f.name} != b.{f.name}: return False")
+        func += [" return True"]
+        exec("\n".join(func), env)
+        return env["equal_ignoring"]
+
+    @classmethod
     async def replace_multiple(
         cls: Type[T],
         connection: Connection,
@@ -422,6 +435,10 @@ class ModelBase(Mapping[str, Any]):
         where: Where,
         ignore: FieldNamesSet = (),
     ) -> Tuple[List[T], List[T], List[T]]:
+        equal_ignoring = cls._cached(
+            ("equal_ignoring", tuple(sorted(ignore))),
+            lambda: cls._get_equal_ignoring_fn(ignore),
+        )
         pending = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
 
         updated = []
@@ -434,7 +451,7 @@ class ModelBase(Mapping[str, Any]):
             if pk not in pending:
                 deleted.append(old)
             else:
-                if not equal_ignoring(old, pending[pk], ignore):
+                if not equal_ignoring(old, pending[pk]):
                     updated.append(pending[pk])
                 del pending[pk]
 
@@ -448,6 +465,24 @@ class ModelBase(Mapping[str, Any]):
         return created, updated, deleted
 
     @classmethod
+    def _get_differences_ignoring_fn(
+        cls: Type[T], ignore: FieldNamesSet = ()
+    ) -> Callable[[T, T], List[str]]:
+        env: Dict[str, Any] = dict()
+        func = [
+            "def differences_ignoring(a, b):",
+            " diffs = []",
+        ]
+        for f in fields(cls):
+            if f.name not in ignore:
+                func.append(
+                    f" if a.{f.name} != b.{f.name}: diffs.append({repr(f.name)})"
+                )
+        func += [" return diffs"]
+        exec("\n".join(func), env)
+        return env["differences_ignoring"]
+
+    @classmethod
     async def replace_multiple_reporting_differences(
         cls: Type[T],
         connection: Connection,
@@ -456,6 +491,11 @@ class ModelBase(Mapping[str, Any]):
         where: Where,
         ignore: FieldNamesSet = (),
     ) -> Tuple[List[T], List[Tuple[T, T, List[str]]], List[T]]:
+        differences_ignoring = cls._cached(
+            ("differences_ignoring", tuple(sorted(ignore))),
+            lambda: cls._get_differences_ignoring_fn(ignore),
+        )
+
         pending = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
 
         updated_triples = []
@@ -468,7 +508,7 @@ class ModelBase(Mapping[str, Any]):
             if pk not in pending:
                 deleted.append(old)
             else:
-                diffs = differences_ignoring(old, pending[pk], ignore)
+                diffs = differences_ignoring(old, pending[pk])
                 if diffs:
                     updated_triples.append((old, pending[pk], diffs))
                 del pending[pk]
@@ -483,22 +523,3 @@ class ModelBase(Mapping[str, Any]):
             await cls.delete_multiple(connection, deleted)
 
         return created, updated_triples, deleted
-
-
-def equal_ignoring(old: T, new: T, ignore: FieldNamesSet) -> bool:
-    for f in fields(old):
-        if f.name in ignore:
-            continue
-        if getattr(old, f.name) != getattr(new, f.name):
-            return False
-    return True
-
-
-def differences_ignoring(old: T, new: T, ignore: FieldNamesSet) -> List[str]:
-    diffs = []
-    for f in fields(old):
-        if f.name in ignore:
-            continue
-        if getattr(old, f.name) != getattr(new, f.name):
-            diffs.append(f.name)
-    return diffs
