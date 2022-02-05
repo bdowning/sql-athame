@@ -50,14 +50,11 @@ def test_modelclass():
         "hi",
     ]
 
-    assert (
-        sql(
-            "INSERT INTO table ({}) VALUES ({})",
-            sql(",").join(t.field_names_sql()),
-            sql(",").join(t.field_values_sql()),
-        ).query()
-        == ('INSERT INTO table ("foo","bar") VALUES ($1,$2)', [42, "hi"])
-    )
+    assert sql(
+        "INSERT INTO table ({}) VALUES ({})",
+        sql(",").join(t.field_names_sql()),
+        sql(",").join(t.field_values_sql()),
+    ).query() == ('INSERT INTO table ("foo","bar") VALUES ($1,$2)', [42, "hi"])
 
 
 def test_modelclass_implicit_types():

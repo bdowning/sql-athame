@@ -27,7 +27,6 @@ try:
         query = "".join(out_parts).strip()
         return text(query).bindparams(*bindparams.values())
 
-
 except ImportError:
 
     def sqlalchemy_text_from_fragment(self: "Fragment") -> Any:
