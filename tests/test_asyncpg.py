@@ -10,7 +10,6 @@ from sql_athame import ModelBase, model_field_metadata, sql
 
 
 @pytest.fixture(autouse=True)
-@pytest.mark.asyncio
 async def conn():
     port = os.environ.get("PGPORT", 29329)
     conn = await asyncpg.connect(
@@ -32,18 +31,15 @@ class Table1(ModelBase, table_name="table1"):
 
 
 @pytest.fixture(autouse=True)
-@pytest.mark.asyncio
 async def tables(conn):
     await conn.execute(*Table1.create_table_sql())
     yield
 
 
-@pytest.mark.asyncio
 async def test_connection(conn):
     assert await conn.fetchval("SELECT 2 + 2") == 4
 
 
-@pytest.mark.asyncio
 async def test_select(conn, tables):
     assert len(await conn.fetch("SELECT * FROM table1")) == 0
     await Table1(42, "foo").insert(conn)
@@ -51,7 +47,6 @@ async def test_select(conn, tables):
     assert list(res.keys()) == ["a", "b"]
 
 
-@pytest.mark.asyncio
 async def test_replace_multiple(conn):
     @dataclass(order=True)
     class Test(ModelBase, table_name="test", primary_key="id"):
@@ -96,7 +91,6 @@ async def test_replace_multiple(conn):
     ]
 
 
-@pytest.mark.asyncio
 async def test_replace_multiple_reporting_differences(conn):
     @dataclass(order=True)
     class Test(ModelBase, table_name="test", primary_key="id"):
@@ -144,7 +138,6 @@ async def test_replace_multiple_reporting_differences(conn):
     ]
 
 
-@pytest.mark.asyncio
 async def test_replace_multiple_multicolumn_pk(conn):
     @dataclass(order=True)
     class Test(ModelBase, table_name="test", primary_key=("id1", "id2")):
@@ -175,7 +168,6 @@ async def test_replace_multiple_multicolumn_pk(conn):
     ]
 
 
-@pytest.mark.asyncio
 async def test_serial(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
@@ -192,7 +184,6 @@ async def test_serial(conn):
     assert list(await Test.select(conn)) == [Test(1, 42, "bar"), Test(2, 42, "bar")]
 
 
-@pytest.mark.asyncio
 async def test_unnest_json(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
@@ -219,7 +210,6 @@ async def test_unnest_json(conn):
     ) == [1]
 
 
-@pytest.mark.asyncio
 async def test_unnest_empty(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
