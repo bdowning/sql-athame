@@ -5,7 +5,7 @@ jobs:
     parameters:
       python_version:
         type: string
-        default: "3.8"
+        default: "3.9"
 
     docker:
       - image: circleci/python:<< parameters.python_version >>
@@ -67,7 +67,7 @@ workflows:
               only: /^v.*/
           matrix:
             parameters:
-              python_version: ["3.7", "3.8", "3.9"]
+              python_version: ["3.7", "3.8", "3.9", "3.10"]
       - publish:
           requires:
             - test
