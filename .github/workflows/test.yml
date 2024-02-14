@@ -1,0 +1,43 @@
+name: test
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        python-version:
+          - '3.9'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: password
+    env:
+      PGPORT: 5432
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install poetry
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: poetry
+      - run: poetry install
+      - run: poetry run flake8 sql_athame tests
+      - run: poetry run mypy sql_athame/**.py tests/**.py
+        if: success() || failure()
+      - run: poetry run black --check sql_athame tests
+        if: success() || failure()
+      - run: poetry run isort --check-only sql_athame/**.py tests/**.py
+        if: success() || failure()
+      - run: poetry run pytest
+        if: success() || failure()
