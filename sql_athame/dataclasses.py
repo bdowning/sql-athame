@@ -54,7 +54,7 @@ def model_field_metadata(
 def model_field(
     *, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs: Any
 ) -> Any:
-    return field(**kwargs, metadata=model_field_metadata(type, constraints))  # type: ignore
+    return field(**kwargs, metadata=model_field_metadata(type, constraints))
 
 
 sql_create_type_map = {
@@ -112,6 +112,13 @@ class ModelBase(Mapping[str, Any]):
             cls.primary_key_names = tuple(primary_key)
 
     @classmethod
+    def _fields(cls):
+        # wrapper to ignore typing weirdness: 'Argument 1 to "fields"
+        # has incompatible type "..."; expected "DataclassInstance |
+        # type[DataclassInstance]"'
+        return fields(cls)  # type: ignore
+
+    @classmethod
     def _cached(cls, key: tuple, thunk: Callable[[], U]) -> U:
         try:
             return cls._cache[key]
@@ -139,7 +146,7 @@ class ModelBase(Mapping[str, Any]):
         try:
             return cls._column_info[column]  # type: ignore
         except AttributeError:
-            cls._column_info = {f.name: column_info_for_field(f) for f in fields(cls)}
+            cls._column_info = {f.name: column_info_for_field(f) for f in cls._fields()}
             return cls._column_info[column]
 
     @classmethod
@@ -152,7 +159,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def field_names(cls, *, exclude: FieldNamesSet = ()) -> List[str]:
-        return [f.name for f in fields(cls) if f.name not in exclude]
+        return [f.name for f in cls._fields() if f.name not in exclude]
 
     @classmethod
     def field_names_sql(
@@ -171,7 +178,7 @@ class ModelBase(Mapping[str, Any]):
     ) -> Callable[[T], List[Any]]:
         env: Dict[str, Any] = dict()
         func = ["def get_field_values(self): return ["]
-        for f in fields(cls):
+        for f in cls._fields():
             if f.name not in exclude:
                 func.append(f"self.{f.name},")
         func += ["]"]
@@ -200,23 +207,23 @@ class ModelBase(Mapping[str, Any]):
     def from_tuple(
         cls: Type[T], tup: tuple, *, offset: int = 0, exclude: FieldNamesSet = ()
     ) -> T:
-        names = (f.name for f in fields(cls) if f.name not in exclude)
+        names = (f.name for f in cls._fields() if f.name not in exclude)
         kwargs = {name: tup[offset] for offset, name in enumerate(names, start=offset)}
-        return cls(**kwargs)  # type: ignore
+        return cls(**kwargs)
 
     @classmethod
     def from_dict(
         cls: Type[T], dct: Dict[str, Any], *, exclude: FieldNamesSet = ()
     ) -> T:
-        names = {f.name for f in fields(cls) if f.name not in exclude}
+        names = {f.name for f in cls._fields() if f.name not in exclude}
         kwargs = {k: v for k, v in dct.items() if k in names}
-        return cls(**kwargs)  # type: ignore
+        return cls(**kwargs)
 
     @classmethod
     def ensure_model(cls: Type[T], row: Union[T, Mapping[str, Any]]) -> T:
         if isinstance(row, cls):
             return row
-        return cls(**row)  # type: ignore
+        return cls(**row)
 
     @classmethod
     def create_table_sql(cls) -> Fragment:
@@ -226,7 +233,7 @@ class ModelBase(Mapping[str, Any]):
                 sql.identifier(f.name),
                 sql.literal(cls.column_info(f.name).create_table_string()),
             )
-            for f in fields(cls)
+            for f in cls._fields()
         ]
         if cls.primary_key_names:
             entries += [sql("PRIMARY KEY ({})", sql.list(cls.primary_key_names_sql()))]
@@ -278,7 +285,7 @@ class ModelBase(Mapping[str, Any]):
             *cls.select_sql(order_by=order_by, for_update=for_update, where=where),
             prefetch=prefetch,
         ):
-            yield cls(**row)  # type: ignore
+            yield cls(**row)
 
     @classmethod
     async def select(
@@ -289,7 +296,7 @@ class ModelBase(Mapping[str, Any]):
         where: Where = (),
     ) -> List[T]:
         return [
-            cls(**row)  # type: ignore
+            cls(**row)
             for row in await connection_or_pool.fetch(
                 *cls.select_sql(order_by=order_by, for_update=for_update, where=where)
             )
@@ -310,7 +317,7 @@ class ModelBase(Mapping[str, Any]):
         cls: Type[T], connection_or_pool: Union[Connection, Pool], **kwargs: Any
     ) -> T:
         row = await connection_or_pool.fetchrow(*cls.create_sql(**kwargs))
-        return cls(**row)  # type: ignore
+        return cls(**row)
 
     def insert_sql(self, exclude: FieldNamesSet = ()) -> Fragment:
         cached = self._cached(
@@ -419,7 +426,7 @@ class ModelBase(Mapping[str, Any]):
     ) -> Callable[[T, T], bool]:
         env: Dict[str, Any] = dict()
         func = ["def equal_ignoring(a, b):"]
-        for f in fields(cls):
+        for f in cls._fields():
             if f.name not in ignore:
                 func.append(f" if a.{f.name} != b.{f.name}: return False")
         func += [" return True"]
@@ -473,7 +480,7 @@ class ModelBase(Mapping[str, Any]):
             "def differences_ignoring(a, b):",
             " diffs = []",
         ]
-        for f in fields(cls):
+        for f in cls._fields():
             if f.name not in ignore:
                 func.append(
                     f" if a.{f.name} != b.{f.name}: diffs.append({repr(f.name)})"
