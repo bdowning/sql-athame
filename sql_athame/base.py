@@ -106,14 +106,12 @@ class Fragment:
     @overload
     def prep_query(
         self, allow_slots: Literal[True]
-    ) -> Tuple[str, List[Union[Placeholder, Slot]]]:
-        ...  # pragma: no cover
+    ) -> Tuple[str, List[Union[Placeholder, Slot]]]: ...  # pragma: no cover
 
     @overload
     def prep_query(
         self, allow_slots: Literal[False] = False
-    ) -> Tuple[str, List[Placeholder]]:
-        ...  # pragma: no cover
+    ) -> Tuple[str, List[Placeholder]]: ...  # pragma: no cover
 
     def prep_query(self, allow_slots: bool = False) -> Tuple[str, List[Any]]:
         parts: List[FlatPart] = []
@@ -228,12 +226,10 @@ class SQLFormatter:
             return lit(f"{quote_identifier(name)}")
 
     @overload
-    def all(self, parts: Iterable[Fragment]) -> Fragment:
-        ...  # pragma: no cover
+    def all(self, parts: Iterable[Fragment]) -> Fragment: ...  # pragma: no cover
 
     @overload
-    def all(self, *parts: Fragment) -> Fragment:
-        ...  # pragma: no cover
+    def all(self, *parts: Fragment) -> Fragment: ...  # pragma: no cover
 
     def all(self, *parts) -> Fragment:  # type: ignore
         if parts and not isinstance(parts[0], Fragment):
@@ -241,12 +237,10 @@ class SQLFormatter:
         return any_all(list(parts), "AND", "TRUE")
 
     @overload
-    def any(self, parts: Iterable[Fragment]) -> Fragment:
-        ...  # pragma: no cover
+    def any(self, parts: Iterable[Fragment]) -> Fragment: ...  # pragma: no cover
 
     @overload
-    def any(self, *parts: Fragment) -> Fragment:
-        ...  # pragma: no cover
+    def any(self, *parts: Fragment) -> Fragment: ...  # pragma: no cover
 
     def any(self, *parts) -> Fragment:  # type: ignore
         if parts and not isinstance(parts[0], Fragment):
@@ -254,12 +248,10 @@ class SQLFormatter:
         return any_all(list(parts), "OR", "FALSE")
 
     @overload
-    def list(self, parts: Iterable[Fragment]) -> Fragment:
-        ...  # pragma: no cover
+    def list(self, parts: Iterable[Fragment]) -> Fragment: ...  # pragma: no cover
 
     @overload
-    def list(self, *parts: Fragment) -> Fragment:
-        ...  # pragma: no cover
+    def list(self, *parts: Fragment) -> Fragment: ...  # pragma: no cover
 
     def list(self, *parts) -> Fragment:  # type: ignore
         if parts and not isinstance(parts[0], Fragment):
