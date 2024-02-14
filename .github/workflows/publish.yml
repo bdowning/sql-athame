@@ -1,0 +1,21 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v**'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      POETRY_PYPI_TOKEN_PYPI: ${{ secrets.POETRY_PYPI_TOKEN_PYPI }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install poetry
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: poetry
+      - run: poetry build
+      - run: poetry publish
