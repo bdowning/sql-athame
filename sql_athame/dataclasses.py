@@ -100,12 +100,24 @@ class ModelBase(Mapping[str, Any]):
     _cache: Dict[tuple, Any]
     table_name: str
     primary_key_names: Tuple[str, ...]
+    array_safe_insert: bool
 
     def __init_subclass__(
-        cls, *, table_name: str, primary_key: Union[FieldNames, str] = (), **kwargs: Any
+        cls,
+        *,
+        table_name: str,
+        primary_key: Union[FieldNames, str] = (),
+        insert_multiple_mode: str = "unnest",
+        **kwargs: Any,
     ):
         cls._cache = {}
         cls.table_name = table_name
+        if insert_multiple_mode == "array_safe":
+            cls.array_safe_insert = True
+        elif insert_multiple_mode == "unnest":
+            cls.array_safe_insert = False
+        else:
+            raise ValueError("Unknown `insert_multiple_mode`")
         if isinstance(primary_key, str):
             cls.primary_key_names = (primary_key,)
         else:
@@ -407,18 +419,68 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
-    async def insert_multiple(
+    def insert_multiple_array_safe_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
+        return sql(
+            "INSERT INTO {table} ({fields}) VALUES {values}",
+            table=cls.table_name_sql(),
+            fields=sql.list(cls.field_names_sql()),
+            values=sql.list(
+                sql("({})", sql.list(row.field_values_sql(default_none=True)))
+                for row in rows
+            ),
+        )
+
+    @classmethod
+    async def insert_multiple_unnest(
         cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
         return await connection_or_pool.execute(*cls.insert_multiple_sql(rows))
 
     @classmethod
-    async def upsert_multiple(
+    async def insert_multiple_array_safe(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> str:
+        for chunk in chunked(rows, 100):
+            last = await connection_or_pool.execute(
+                *cls.insert_multiple_array_safe_sql(chunk)
+            )
+        return last
+
+    @classmethod
+    async def insert_multiple(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> str:
+        if cls.array_safe_insert:
+            return await cls.insert_multiple_array_safe(connection_or_pool, rows)
+        else:
+            return await cls.insert_multiple_unnest(connection_or_pool, rows)
+
+    @classmethod
+    async def upsert_multiple_unnest(
         cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
         return await connection_or_pool.execute(
             *cls.upsert_sql(cls.insert_multiple_sql(rows))
         )
+
+    @classmethod
+    async def upsert_multiple_array_safe(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> str:
+        for chunk in chunked(rows, 100):
+            last = await connection_or_pool.execute(
+                *cls.upsert_sql(cls.insert_multiple_array_safe_sql(chunk))
+            )
+        return last
+
+    @classmethod
+    async def upsert_multiple(
+        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> str:
+        if cls.array_safe_insert:
+            return await cls.upsert_multiple_array_safe(connection_or_pool, rows)
+        else:
+            return await cls.upsert_multiple_unnest(connection_or_pool, rows)
 
     @classmethod
     def _get_equal_ignoring_fn(
@@ -530,3 +592,8 @@ class ModelBase(Mapping[str, Any]):
             await cls.delete_multiple(connection, deleted)
 
         return created, updated_triples, deleted
+
+
+def chunked(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i : i + n]

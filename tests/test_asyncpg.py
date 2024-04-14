@@ -91,6 +91,57 @@ async def test_replace_multiple(conn):
     ]
 
 
+async def test_replace_multiple_arrays(conn):
+    @dataclass(order=True)
+    class Test(
+        ModelBase,
+        table_name="test",
+        primary_key="id",
+        insert_multiple_mode="array_safe",
+    ):
+        id: int
+        a: list[int] = field(
+            metadata=model_field_metadata(type="INT[]", constraints="NOT NULL")
+        )
+        b: str
+
+    await conn.execute(*Test.create_table_sql())
+
+    data = [
+        Test(1, [1], "foo"),
+        Test(2, [1, 3, 5], "bar"),
+        Test(3, [], "quux"),
+    ]
+    await Test.insert_multiple(conn, data)
+
+    c, u, d = await Test.replace_multiple(conn, [], where=[])
+    assert not c and not u
+    assert len(d) == 3
+    assert await Test.select(conn) == []
+
+    await Test.insert_multiple(conn, data)
+
+    c, u, d = await Test.replace_multiple(conn, [], where=sql("a @> ARRAY[1]"))
+    assert not c and not u
+    assert len(d) == 2
+    assert [x.id for x in await Test.select(conn)] == [3]
+
+    await conn.execute("DELETE FROM test")
+    await Test.insert_multiple(conn, data)
+
+    c, u, d = await Test.replace_multiple(
+        conn, [Test(1, [5], "apples"), Test(4, [6], "fred")], where=sql("a @> ARRAY[1]")
+    )
+    assert len(c) == 1
+    assert len(u) == 1
+    assert len(d) == 1
+    assert list(sorted(await Test.select(conn))) == [
+        Test(1, [5], "apples"),
+        Test(3, [], "quux"),
+        Test(4, [6], "fred"),
+    ]
+
+
 async def test_replace_multiple_reporting_differences(conn):
     @dataclass(order=True)
     class Test(ModelBase, table_name="test", primary_key="id"):
