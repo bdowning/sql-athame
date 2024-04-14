@@ -4,7 +4,7 @@ usage=()
 
 usage+=("  $0 tests - run tests")
 tests() {
-    poetry run pytest
+    poetry run pytest "$@"
     lint
 }
 
