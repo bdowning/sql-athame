@@ -595,5 +595,7 @@ class ModelBase(Mapping[str, Any]):
 
 
 def chunked(lst, n):
+    if type(lst) is not list:
+        lst = list(lst)
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
