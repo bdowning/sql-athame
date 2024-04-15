@@ -116,7 +116,7 @@ async def test_replace_multiple_arrays(conn):
         Test(2, [1, 3, 5], "bar"),
         Test(3, [], "quux"),
     ]
-    await Test.insert_multiple(conn, data)
+    await Test.insert_multiple(conn, dict(enumerate(data)).values())
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
     assert not c and not u
