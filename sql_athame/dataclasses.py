@@ -440,6 +440,7 @@ class ModelBase(Mapping[str, Any]):
     async def insert_multiple_array_safe(
         cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
+        last = ""
         for chunk in chunked(rows, 100):
             last = await connection_or_pool.execute(
                 *cls.insert_multiple_array_safe_sql(chunk)
@@ -467,6 +468,7 @@ class ModelBase(Mapping[str, Any]):
     async def upsert_multiple_array_safe(
         cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
+        last = ""
         for chunk in chunked(rows, 100):
             last = await connection_or_pool.execute(
                 *cls.upsert_sql(cls.insert_multiple_array_safe_sql(chunk))

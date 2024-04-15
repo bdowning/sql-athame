@@ -55,6 +55,8 @@ async def test_replace_multiple(conn):
         b: str
 
     await conn.execute(*Test.create_table_sql())
+    await Test.insert_multiple(conn, [])
+    await Test.upsert_multiple(conn, [])
 
     data = [
         Test(1, 1, "foo"),
@@ -106,13 +108,15 @@ async def test_replace_multiple_arrays(conn):
         b: str
 
     await conn.execute(*Test.create_table_sql())
+    await Test.insert_multiple(conn, [])
+    await Test.upsert_multiple(conn, [])
 
     data = [
         Test(1, [1], "foo"),
         Test(2, [1, 3, 5], "bar"),
         Test(3, [], "quux"),
     ]
-    await Test.insert_multiple(conn, data)
+    await Test.insert_multiple(conn, dict(enumerate(data)).values())
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
     assert not c and not u
