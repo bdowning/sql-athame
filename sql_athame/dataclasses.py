@@ -458,31 +458,46 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def upsert_multiple_unnest(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: Type[T],
+        connection_or_pool: Union[Connection, Pool],
+        rows: Iterable[T],
+        insert_only: FieldNamesSet = (),
     ) -> str:
         return await connection_or_pool.execute(
-            *cls.upsert_sql(cls.insert_multiple_sql(rows))
+            *cls.upsert_sql(cls.insert_multiple_sql(rows), exclude=insert_only)
         )
 
     @classmethod
     async def upsert_multiple_array_safe(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: Type[T],
+        connection_or_pool: Union[Connection, Pool],
+        rows: Iterable[T],
+        insert_only: FieldNamesSet = (),
     ) -> str:
         last = ""
         for chunk in chunked(rows, 100):
             last = await connection_or_pool.execute(
-                *cls.upsert_sql(cls.insert_multiple_array_safe_sql(chunk))
+                *cls.upsert_sql(
+                    cls.insert_multiple_array_safe_sql(chunk), exclude=insert_only
+                )
             )
         return last
 
     @classmethod
     async def upsert_multiple(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: Type[T],
+        connection_or_pool: Union[Connection, Pool],
+        rows: Iterable[T],
+        insert_only: FieldNamesSet = (),
     ) -> str:
         if cls.array_safe_insert:
-            return await cls.upsert_multiple_array_safe(connection_or_pool, rows)
+            return await cls.upsert_multiple_array_safe(
+                connection_or_pool, rows, insert_only=insert_only
+            )
         else:
-            return await cls.upsert_multiple_unnest(connection_or_pool, rows)
+            return await cls.upsert_multiple_unnest(
+                connection_or_pool, rows, insert_only=insert_only
+            )
 
     @classmethod
     def _get_equal_ignoring_fn(
@@ -505,9 +520,11 @@ class ModelBase(Mapping[str, Any]):
         *,
         where: Where,
         ignore: FieldNamesSet = (),
+        insert_only: FieldNamesSet = (),
     ) -> Tuple[List[T], List[T], List[T]]:
+        ignore = sorted(set(ignore) | set(insert_only))
         equal_ignoring = cls._cached(
-            ("equal_ignoring", tuple(sorted(ignore))),
+            ("equal_ignoring", tuple(ignore)),
             lambda: cls._get_equal_ignoring_fn(ignore),
         )
         pending = {row.primary_key(): row for row in map(cls.ensure_model, rows)}
@@ -529,7 +546,9 @@ class ModelBase(Mapping[str, Any]):
         created = list(pending.values())
 
         if created or updated:
-            await cls.upsert_multiple(connection, (*created, *updated))
+            await cls.upsert_multiple(
+                connection, (*created, *updated), insert_only=insert_only
+            )
         if deleted:
             await cls.delete_multiple(connection, deleted)
 
@@ -561,9 +580,11 @@ class ModelBase(Mapping[str, Any]):
         *,
         where: Where,
         ignore: FieldNamesSet = (),
+        insert_only: FieldNamesSet = (),
     ) -> Tuple[List[T], List[Tuple[T, T, List[str]]], List[T]]:
+        ignore = sorted(set(ignore) | set(insert_only))
         differences_ignoring = cls._cached(
-            ("differences_ignoring", tuple(sorted(ignore))),
+            ("differences_ignoring", tuple(ignore)),
             lambda: cls._get_differences_ignoring_fn(ignore),
         )
 
@@ -588,7 +609,9 @@ class ModelBase(Mapping[str, Any]):
 
         if created or updated_triples:
             await cls.upsert_multiple(
-                connection, (*created, *(t[1] for t in updated_triples))
+                connection,
+                (*created, *(t[1] for t in updated_triples)),
+                insert_only=insert_only,
             )
         if deleted:
             await cls.delete_multiple(connection, deleted)
