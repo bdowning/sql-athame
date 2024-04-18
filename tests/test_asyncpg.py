@@ -1,6 +1,8 @@
+import asyncio
 import json
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 import asyncpg
@@ -91,6 +93,37 @@ async def test_replace_multiple(conn):
         Test(3, 2, "quux"),
         Test(4, 6, "fred"),
     ]
+
+
+async def test_replace_multiple_ignore_insert_only(conn):
+    @dataclass(order=True)
+    class Test(ModelBase, table_name="test", primary_key="id"):
+        id: int
+        a: int
+        created: datetime = field(default_factory=datetime.utcnow)
+        updated: datetime = field(default_factory=datetime.utcnow)
+
+    await conn.execute(*Test.create_table_sql())
+
+    data = [Test(1, 1), Test(2, 1), Test(3, 2)]
+    await Test.insert_multiple(conn, data)
+
+    await asyncio.sleep(0.1)
+    new_data = [Test(1, 1), Test(2, 4), Test(3, 2)]
+    c, u, d = await Test.replace_multiple(
+        conn, new_data, where=[], ignore=["updated"], insert_only=["created"]
+    )
+    assert not c and not d
+    assert len(u) == 1
+
+    db_data = await Test.select(conn, order_by="id")
+    assert data[0] == db_data[0]
+    assert data[2] == db_data[2]
+    orig = data[1]
+    new = new_data[1]
+    db = db_data[1]
+    assert db.created == orig.created
+    assert db.updated == new.updated
 
 
 async def test_replace_multiple_arrays(conn):
