@@ -137,9 +137,7 @@ async def test_replace_multiple_arrays(conn):
         insert_multiple_mode="array_safe",
     ):
         id: int
-        a: list[int] = field(
-            metadata=model_field_metadata(type="INT[]", constraints="NOT NULL")
-        )
+        a: list[int] = field(metadata=model_field_metadata(type="INT[]"))
         b: str
 
     await conn.execute(*Test.create_table_sql())
@@ -282,7 +280,9 @@ async def test_unnest_json(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
         id: int = field(metadata=model_field_metadata(type="SERIAL"))
-        json: Optional[list] = field(metadata=model_field_metadata(type="JSONB"))
+        json: Optional[list] = field(
+            metadata=model_field_metadata(type="JSONB", nullable=True)
+        )
 
     await conn.set_type_codec(
         "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"

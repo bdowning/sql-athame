@@ -9,13 +9,8 @@ from sql_athame.dataclasses import ModelBase, model_field_metadata
 def test_modelclass():
     @dataclass
     class Test(ModelBase, table_name="table"):
-        foo: int = field(
-            metadata=model_field_metadata(type="INTEGER", constraints="NOT NULL")
-        )
-        bar: str = field(
-            default="hi",
-            metadata=model_field_metadata(type="TEXT", constraints="NOT NULL"),
-        )
+        foo: int = field(metadata=model_field_metadata(type="INTEGER"))
+        bar: str = field(default="hi", metadata=model_field_metadata(type="TEXT"))
 
     t = Test(42)
 
@@ -107,7 +102,7 @@ def test_serial():
     assert Test.column_info("id").create_type == "SERIAL"
     assert list(Test.create_table_sql()) == [
         'CREATE TABLE IF NOT EXISTS "table" ('
-        '"id" SERIAL, '
+        '"id" SERIAL NOT NULL, '
         '"foo" INTEGER NOT NULL, '
         '"bar" TEXT NOT NULL, '
         'PRIMARY KEY ("id"))'

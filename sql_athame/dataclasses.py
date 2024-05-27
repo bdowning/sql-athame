@@ -1,7 +1,7 @@
 import datetime
 import uuid
 from collections.abc import AsyncGenerator, Iterable, Mapping
-from dataclasses import dataclass, field, fields
+from dataclasses import InitVar, dataclass, field, fields
 from typing import (
     Any,
     Callable,
@@ -25,21 +25,37 @@ Pool = Any
 @dataclass
 class ColumnInfo:
     type: str
-    create_type: str
-    constraints: tuple[str, ...]
+    create_type: str = ""
+    nullable: bool = False
+    _constraints: tuple[str, ...] = ()
+
+    constraints: InitVar[Union[str, Iterable[str], None]] = None
+
+    def __post_init__(self, constraints: Union[str, Iterable[str], None]):
+        if self.create_type == "":
+            self.create_type = self.type
+            self.type = sql_create_type_map.get(self.type.upper(), self.type)
+        if constraints is not None:
+            if type(constraints) is str:
+                constraints = (constraints,)
+            self._constraints = tuple(constraints)
 
     def create_table_string(self):
-        return " ".join((self.create_type, *self.constraints))
+        parts = (
+            self.create_type,
+            *(() if self.nullable else ("NOT NULL",)),
+            *self._constraints,
+        )
+        return " ".join(parts)
 
 
 def model_field_metadata(
-    type: str, constraints: Union[str, Iterable[str]] = ()
+    type: str, nullable: bool = False, constraints: Union[str, Iterable[str]] = ()
 ) -> dict[str, Any]:
     if isinstance(constraints, str):
         constraints = (constraints,)
-    info = ColumnInfo(
-        sql_create_type_map.get(type.upper(), type), type, tuple(constraints)
-    )
+    info = ColumnInfo(type=type, nullable=nullable, constraints=constraints)
+
     return {"sql_athame": info}
 
 
@@ -56,31 +72,31 @@ sql_create_type_map = {
 }
 
 
-sql_type_map = {
-    Optional[bool]: ("BOOLEAN",),
-    Optional[bytes]: ("BYTEA",),
-    Optional[datetime.date]: ("DATE",),
-    Optional[datetime.datetime]: ("TIMESTAMP",),
-    Optional[float]: ("DOUBLE PRECISION",),
-    Optional[int]: ("INTEGER",),
-    Optional[str]: ("TEXT",),
-    Optional[uuid.UUID]: ("UUID",),
-    bool: ("BOOLEAN", "NOT NULL"),
-    bytes: ("BYTEA", "NOT NULL"),
-    datetime.date: ("DATE", "NOT NULL"),
-    datetime.datetime: ("TIMESTAMP", "NOT NULL"),
-    float: ("DOUBLE PRECISION", "NOT NULL"),
-    int: ("INTEGER", "NOT NULL"),
-    str: ("TEXT", "NOT NULL"),
-    uuid.UUID: ("UUID", "NOT NULL"),
+sql_type_map: dict[type, tuple[str, bool]] = {
+    Optional[bool]: ("BOOLEAN", True),
+    Optional[bytes]: ("BYTEA", True),
+    Optional[datetime.date]: ("DATE", True),
+    Optional[datetime.datetime]: ("TIMESTAMP", True),
+    Optional[float]: ("DOUBLE PRECISION", True),
+    Optional[int]: ("INTEGER", True),
+    Optional[str]: ("TEXT", True),
+    Optional[uuid.UUID]: ("UUID", True),
+    bool: ("BOOLEAN", False),
+    bytes: ("BYTEA", False),
+    datetime.date: ("DATE", False),
+    datetime.datetime: ("TIMESTAMP", False),
+    float: ("DOUBLE PRECISION", False),
+    int: ("INTEGER", False),
+    str: ("TEXT", False),
+    uuid.UUID: ("UUID", False),
 }
 
 
 def column_info_for_field(field):
     if "sql_athame" in field.metadata:
         return field.metadata["sql_athame"]
-    type, *constraints = sql_type_map[field.type]
-    return ColumnInfo(type, type, tuple(constraints))
+    type, nullable = sql_type_map[field.type]
+    return ColumnInfo(type=type, nullable=nullable)
 
 
 T = TypeVar("T", bound="ModelBase")
