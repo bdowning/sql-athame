@@ -35,7 +35,6 @@ class Table1(ModelBase, table_name="table1"):
 @pytest.fixture(autouse=True)
 async def tables(conn):
     await conn.execute(*Table1.create_table_sql())
-    yield
 
 
 async def test_connection(conn):
@@ -68,14 +67,16 @@ async def test_replace_multiple(conn):
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 3
     assert await Test.select(conn) == []
 
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=sql("a = 1"))
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
@@ -88,7 +89,7 @@ async def test_replace_multiple(conn):
     assert len(c) == 1
     assert len(u) == 1
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, 5, "apples"),
         Test(3, 2, "quux"),
         Test(4, 6, "fred"),
@@ -113,7 +114,8 @@ async def test_replace_multiple_ignore_insert_only(conn):
     c, u, d = await Test.replace_multiple(
         conn, new_data, where=[], ignore=["updated"], insert_only=["created"]
     )
-    assert not c and not d
+    assert not c
+    assert not d
     assert len(u) == 1
 
     db_data = await Test.select(conn, order_by="id")
@@ -152,14 +154,16 @@ async def test_replace_multiple_arrays(conn):
     await Test.insert_multiple(conn, dict(enumerate(data)).values())
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 3
     assert await Test.select(conn) == []
 
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=sql("a @> ARRAY[1]"))
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
@@ -172,7 +176,7 @@ async def test_replace_multiple_arrays(conn):
     assert len(c) == 1
     assert len(u) == 1
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, [5], "apples"),
         Test(3, [], "quux"),
         Test(4, [6], "fred"),
@@ -196,7 +200,8 @@ async def test_replace_multiple_reporting_differences(conn):
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple_reporting_differences(conn, [], where=[])
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 3
     assert await Test.select(conn) == []
 
@@ -205,7 +210,8 @@ async def test_replace_multiple_reporting_differences(conn):
     c, u, d = await Test.replace_multiple_reporting_differences(
         conn, [], where=sql("a = 1")
     )
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
@@ -219,7 +225,7 @@ async def test_replace_multiple_reporting_differences(conn):
     assert len(u) == 1
     assert u == [(Test(1, 1, "foo"), Test(1, 5, "apples"), ["a", "b"])]
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, 5, "apples"),
         Test(3, 2, "quux"),
         Test(4, 6, "fred"),
@@ -249,7 +255,7 @@ async def test_replace_multiple_multicolumn_pk(conn):
     assert len(c) == 1
     assert len(u) == 1
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, 1, 5, "apples"),
         Test(1, 3, 2, "quux"),
         Test(2, 4, 6, "fred"),

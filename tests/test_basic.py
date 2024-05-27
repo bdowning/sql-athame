@@ -35,27 +35,24 @@ def test_basic():
         ["plugh", "2019-05-01", "2019-08-26"],
     )
 
-    assert (
-        sql(
-            """
+    assert sql(
+        """
             SELECT *
               FROM ({subquery}) sq
               JOIN other_table ot ON (ot.id = sq.id)
               WHERE ot.foo = {foo}
               LIMIT {limit}
             """,
-            subquery=get_orders({"id": "xyzzy"}),
-            foo="bork",
-            limit=50,
-        ).query()
-        == (
-            "SELECT *"
-            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) sq"
-            " JOIN other_table ot ON (ot.id = sq.id)"
-            " WHERE ot.foo = $2"
-            " LIMIT $3",
-            ["xyzzy", "bork", 50],
-        )
+        subquery=get_orders({"id": "xyzzy"}),
+        foo="bork",
+        limit=50,
+    ).query() == (
+        "SELECT *"
+        " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) sq"
+        " JOIN other_table ot ON (ot.id = sq.id)"
+        " WHERE ot.foo = $2"
+        " LIMIT $3",
+        ["xyzzy", "bork", 50],
     )
 
 
@@ -90,61 +87,52 @@ def test_repeated_value_nested():
     sq_a = get_orders({"id": "a"})
     sq_b = get_orders({"id": "b"})
 
-    assert (
-        sql(
-            """
+    assert sql(
+        """
             SELECT a.*, b.*
               FROM ({sq_a}) a,
                    ({sq_b}) b
             """,
-            sq_a=sq_a,
-            sq_b=sq_b,
-        ).query()
-        == (
-            "SELECT a.*, b.*"
-            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
-            " (SELECT * FROM orders WHERE TRUE AND id = $2) b",
-            ["a", "b"],
-        )
+        sq_a=sq_a,
+        sq_b=sq_b,
+    ).query() == (
+        "SELECT a.*, b.*"
+        " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
+        " (SELECT * FROM orders WHERE TRUE AND id = $2) b",
+        ["a", "b"],
     )
 
     sq_a = get_orders({"id": "a"})
     sq_b = get_orders({"id": "b"})
 
-    assert (
-        sql(
-            """
+    assert sql(
+        """
             SELECT a.*, b.*
               FROM ({sq_a}) a,
                    ({sq_b}) b
             """,
-            sq_a=sq_a,
-            sq_b=sq_a,
-        ).query()
-        == (
-            "SELECT a.*, b.*"
-            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
-            " (SELECT * FROM orders WHERE TRUE AND id = $1) b",
-            ["a"],
-        )
+        sq_a=sq_a,
+        sq_b=sq_a,
+    ).query() == (
+        "SELECT a.*, b.*"
+        " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
+        " (SELECT * FROM orders WHERE TRUE AND id = $1) b",
+        ["a"],
     )
 
-    assert (
-        sql(
-            """
+    assert sql(
+        """
             SELECT a.*, b.*
               FROM ({sq_a}) a,
                    ({sq_b}) b
             """,
-            sq_a=sq_a,
-            sq_b=sq_a,
-        ).query()
-        == (
-            "SELECT a.*, b.*"
-            " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
-            " (SELECT * FROM orders WHERE TRUE AND id = $1) b",
-            ["a"],
-        )
+        sq_a=sq_a,
+        sq_b=sq_a,
+    ).query() == (
+        "SELECT a.*, b.*"
+        " FROM (SELECT * FROM orders WHERE TRUE AND id = $1) a,"
+        " (SELECT * FROM orders WHERE TRUE AND id = $1) b",
+        ["a"],
     )
 
 
@@ -269,14 +257,14 @@ def test_escape():
     query = sql("SELECT {}", sql.escape(4.0))
     assert list(query) == ["SELECT 4.0"]
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Can't escape NaN float"):
         query = sql("SELECT {}", sql.escape(float("nan")))
 
-    with pytest.raises(ValueError):
-        query = sql("SELECT {}", sql.escape(float(1e1234567)))
+    with pytest.raises(ValueError, match="Can't escape infinite float"):
+        query = sql("SELECT {}", sql.escape(1e1234567))
 
-    with pytest.raises(ValueError):
-        query = sql("SELECT {}", sql.escape(float(-1e1234567)))
+    with pytest.raises(ValueError, match="Can't escape infinite float"):
+        query = sql("SELECT {}", sql.escape(-1e1234567))
 
     query = sql(
         "SELECT {}", sql.escape(uuid.UUID("66c41d78-5ebc-4f96-a05b-85c92a15a9a1"))
