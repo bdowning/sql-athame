@@ -1,15 +1,12 @@
 import datetime
 import uuid
+from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, fields
 from typing import (
     Any,
-    AsyncGenerator,
     Callable,
     Dict,
-    Iterable,
-    Iterator,
     List,
-    Mapping,
     Optional,
     Set,
     Tuple,
@@ -565,9 +562,7 @@ class ModelBase(Mapping[str, Any]):
         ]
         for f in cls._fields():
             if f.name not in ignore:
-                func.append(
-                    f" if a.{f.name} != b.{f.name}: diffs.append({repr(f.name)})"
-                )
+                func.append(f" if a.{f.name} != b.{f.name}: diffs.append({f.name!r})")
         func += [" return diffs"]
         exec("\n".join(func), env)
         return env["differences_ignoring"]

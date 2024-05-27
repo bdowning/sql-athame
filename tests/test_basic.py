@@ -261,10 +261,10 @@ def test_escape():
         query = sql("SELECT {}", sql.escape(float("nan")))
 
     with pytest.raises(ValueError):
-        query = sql("SELECT {}", sql.escape(float(1e1234567)))
+        query = sql("SELECT {}", sql.escape(1e1234567))
 
     with pytest.raises(ValueError):
-        query = sql("SELECT {}", sql.escape(float(-1e1234567)))
+        query = sql("SELECT {}", sql.escape(-1e1234567))
 
     query = sql(
         "SELECT {}", sql.escape(uuid.UUID("66c41d78-5ebc-4f96-a05b-85c92a15a9a1"))

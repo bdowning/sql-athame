@@ -2,15 +2,13 @@ import dataclasses
 import json
 import re
 import string
+from collections.abc import Iterable, Iterator, Sequence
 from typing import (
     Any,
     Callable,
     Dict,
-    Iterable,
-    Iterator,
     List,
     Optional,
-    Sequence,
     Tuple,
     Union,
     cast,
@@ -70,10 +68,10 @@ class Fragment:
         for i, part in enumerate(flattened.parts):
             if isinstance(part, Slot):
                 func.append(
-                    f"  process_slot_value({repr(part.name)}, slots[{repr(part.name)}], placeholders),"
+                    f"  process_slot_value({part.name!r}, slots[{part.name!r}], placeholders),"
                 )
             elif isinstance(part, str):
-                func.append(f"  {repr(part)},")
+                func.append(f"  {part!r},")
             else:
                 env[f"part_{i}"] = part
                 func.append(f"  part_{i},")
@@ -123,7 +121,7 @@ class Fragment:
         for part in parts:
             if isinstance(part, Slot):
                 if not allow_slots:
-                    raise ValueError(f"Unfilled slot: {repr(part.name)}")
+                    raise ValueError(f"Unfilled slot: {part.name!r}")
                 if part not in slot_ids:
                     args.append(part)
                     slot_ids[part] = len(args)
@@ -155,7 +153,7 @@ class Fragment:
         ]
         for i, arg in enumerate(args):
             if isinstance(arg, Slot):
-                func.append(f"  kwargs[{repr(arg.name)}],")
+                func.append(f"  kwargs[{arg.name!r}],")
             else:
                 env[f"value_{i}"] = arg.value
                 func.append(f"  value_{i},")

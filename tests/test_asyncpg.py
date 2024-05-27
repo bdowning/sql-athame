@@ -35,7 +35,7 @@ class Table1(ModelBase, table_name="table1"):
 @pytest.fixture(autouse=True)
 async def tables(conn):
     await conn.execute(*Table1.create_table_sql())
-    yield
+    return
 
 
 async def test_connection(conn):
@@ -88,7 +88,7 @@ async def test_replace_multiple(conn):
     assert len(c) == 1
     assert len(u) == 1
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, 5, "apples"),
         Test(3, 2, "quux"),
         Test(4, 6, "fred"),
@@ -172,7 +172,7 @@ async def test_replace_multiple_arrays(conn):
     assert len(c) == 1
     assert len(u) == 1
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, [5], "apples"),
         Test(3, [], "quux"),
         Test(4, [6], "fred"),
@@ -219,7 +219,7 @@ async def test_replace_multiple_reporting_differences(conn):
     assert len(u) == 1
     assert u == [(Test(1, 1, "foo"), Test(1, 5, "apples"), ["a", "b"])]
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, 5, "apples"),
         Test(3, 2, "quux"),
         Test(4, 6, "fred"),
@@ -249,7 +249,7 @@ async def test_replace_multiple_multicolumn_pk(conn):
     assert len(c) == 1
     assert len(u) == 1
     assert len(d) == 1
-    assert list(sorted(await Test.select(conn))) == [
+    assert sorted(await Test.select(conn)) == [
         Test(1, 1, 5, "apples"),
         Test(1, 3, 2, "quux"),
         Test(2, 4, 6, "fred"),
