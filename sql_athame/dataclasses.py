@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
+from collections.abc import AsyncGenerator, Iterable, Mapping
 from dataclasses import dataclass, field, fields
 from typing import (
     Any,
@@ -87,7 +87,7 @@ T = TypeVar("T", bound="ModelBase")
 U = TypeVar("U")
 
 
-class ModelBase(Mapping[str, Any]):
+class ModelBase:
     _column_info: Optional[dict[str, ColumnInfo]]
     _cache: dict[tuple, Any]
     table_name: str
@@ -129,21 +129,6 @@ class ModelBase(Mapping[str, Any]):
         except KeyError:
             cls._cache[key] = thunk()
             return cls._cache[key]
-
-    def keys(self):
-        return self.field_names()
-
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __iter__(self) -> Iterator[Any]:
-        return iter(self.keys())
-
-    def __len__(self) -> int:
-        return len(self.keys())
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
 
     @classmethod
     def column_info(cls, column: str) -> ColumnInfo:

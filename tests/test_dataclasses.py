@@ -96,24 +96,6 @@ def test_upsert():
     ]
 
 
-def test_mapping():
-    @dataclass
-    class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int
-        foo: int
-        bar: str
-
-    t = Test(1, 2, "foo")
-    assert t["id"] == 1
-    assert t["foo"] == 2
-    assert t["bar"] == "foo"
-
-    assert list(t.keys()) == ["id", "foo", "bar"]
-
-    assert dict(t) == {"id": 1, "foo": 2, "bar": "foo"}
-    assert dict(**t) == {"id": 1, "foo": 2, "bar": "foo"}
-
-
 def test_serial():
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
