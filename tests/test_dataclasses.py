@@ -3,14 +3,19 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from sql_athame import sql
-from sql_athame.dataclasses import ModelBase, model_field, model_field_metadata
+from sql_athame.dataclasses import ModelBase, model_field_metadata
 
 
 def test_modelclass():
     @dataclass
     class Test(ModelBase, table_name="table"):
-        foo: int = model_field(type="INTEGER", constraints="NOT NULL")
-        bar: str = model_field(default="hi", type="TEXT", constraints="NOT NULL")
+        foo: int = field(
+            metadata=model_field_metadata(type="INTEGER", constraints="NOT NULL")
+        )
+        bar: str = field(
+            default="hi",
+            metadata=model_field_metadata(type="TEXT", constraints="NOT NULL"),
+        )
 
     t = Test(42)
 

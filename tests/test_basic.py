@@ -257,13 +257,13 @@ def test_escape():
     query = sql("SELECT {}", sql.escape(4.0))
     assert list(query) == ["SELECT 4.0"]
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Can't escape NaN float"):
         query = sql("SELECT {}", sql.escape(float("nan")))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Can't escape infinite float"):
         query = sql("SELECT {}", sql.escape(1e1234567))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Can't escape infinite float"):
         query = sql("SELECT {}", sql.escape(-1e1234567))
 
     query = sql(

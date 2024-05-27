@@ -35,7 +35,6 @@ class Table1(ModelBase, table_name="table1"):
 @pytest.fixture(autouse=True)
 async def tables(conn):
     await conn.execute(*Table1.create_table_sql())
-    return
 
 
 async def test_connection(conn):
