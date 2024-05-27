@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 from .types import FlatPart, Placeholder, Slot
 
@@ -7,10 +7,10 @@ try:
     from sqlalchemy.sql.elements import BindParameter
 
     def sqlalchemy_text_from_fragment(self: "Fragment") -> Any:
-        parts: List[FlatPart] = []
+        parts: list[FlatPart] = []
         self.flatten_into(parts)
-        bindparams: Dict[str, Any] = {}
-        out_parts: List[str] = []
+        bindparams: dict[str, Any] = {}
+        out_parts: list[str] = []
         for part in parts:
             if isinstance(part, Slot):
                 out_parts.append(f"(:{part.name})")

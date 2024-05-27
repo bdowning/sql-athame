@@ -5,12 +5,7 @@ from dataclasses import dataclass, field, fields
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
     Union,
 )
@@ -19,9 +14,9 @@ from .base import Fragment, sql
 
 Where = Union[Fragment, Iterable[Fragment]]
 # KLUDGE to avoid a string argument being valid
-SequenceOfStrings = Union[List[str], Tuple[str, ...]]
+SequenceOfStrings = Union[list[str], tuple[str, ...]]
 FieldNames = SequenceOfStrings
-FieldNamesSet = Union[SequenceOfStrings, Set[str]]
+FieldNamesSet = Union[SequenceOfStrings, set[str]]
 
 Connection = Any
 Pool = Any
@@ -31,7 +26,7 @@ Pool = Any
 class ColumnInfo:
     type: str
     create_type: str
-    constraints: Tuple[str, ...]
+    constraints: tuple[str, ...]
 
     def create_table_string(self):
         return " ".join((self.create_type, *self.constraints))
@@ -39,7 +34,7 @@ class ColumnInfo:
 
 def model_field_metadata(
     type: str, constraints: Union[str, Iterable[str]] = ()
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if isinstance(constraints, str):
         constraints = (constraints,)
     info = ColumnInfo(
@@ -93,10 +88,10 @@ U = TypeVar("U")
 
 
 class ModelBase(Mapping[str, Any]):
-    _column_info: Optional[Dict[str, ColumnInfo]]
-    _cache: Dict[tuple, Any]
+    _column_info: Optional[dict[str, ColumnInfo]]
+    _cache: dict[tuple, Any]
     table_name: str
-    primary_key_names: Tuple[str, ...]
+    primary_key_names: tuple[str, ...]
     array_safe_insert: bool
 
     def __init_subclass__(
@@ -163,17 +158,17 @@ class ModelBase(Mapping[str, Any]):
         return sql.identifier(cls.table_name, prefix=prefix)
 
     @classmethod
-    def primary_key_names_sql(cls, *, prefix: Optional[str] = None) -> List[Fragment]:
+    def primary_key_names_sql(cls, *, prefix: Optional[str] = None) -> list[Fragment]:
         return [sql.identifier(pk, prefix=prefix) for pk in cls.primary_key_names]
 
     @classmethod
-    def field_names(cls, *, exclude: FieldNamesSet = ()) -> List[str]:
+    def field_names(cls, *, exclude: FieldNamesSet = ()) -> list[str]:
         return [f.name for f in cls._fields() if f.name not in exclude]
 
     @classmethod
     def field_names_sql(
         cls, *, prefix: Optional[str] = None, exclude: FieldNamesSet = ()
-    ) -> List[Fragment]:
+    ) -> list[Fragment]:
         return [
             sql.identifier(f, prefix=prefix) for f in cls.field_names(exclude=exclude)
         ]
@@ -183,9 +178,9 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def _get_field_values_fn(
-        cls: Type[T], exclude: FieldNamesSet = ()
-    ) -> Callable[[T], List[Any]]:
-        env: Dict[str, Any] = dict()
+        cls: type[T], exclude: FieldNamesSet = ()
+    ) -> Callable[[T], list[Any]]:
+        env: dict[str, Any] = {}
         func = ["def get_field_values(self): return ["]
         for f in cls._fields():
             if f.name not in exclude:
@@ -194,7 +189,7 @@ class ModelBase(Mapping[str, Any]):
         exec(" ".join(func), env)
         return env["get_field_values"]
 
-    def field_values(self, *, exclude: FieldNamesSet = ()) -> List[Any]:
+    def field_values(self, *, exclude: FieldNamesSet = ()) -> list[Any]:
         get_field_values = self._cached(
             ("get_field_values", tuple(sorted(exclude))),
             lambda: self._get_field_values_fn(exclude),
@@ -203,7 +198,7 @@ class ModelBase(Mapping[str, Any]):
 
     def field_values_sql(
         self, *, exclude: FieldNamesSet = (), default_none: bool = False
-    ) -> List[Fragment]:
+    ) -> list[Fragment]:
         if default_none:
             return [
                 sql.literal("DEFAULT") if value is None else sql.value(value)
@@ -214,7 +209,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def from_tuple(
-        cls: Type[T], tup: tuple, *, offset: int = 0, exclude: FieldNamesSet = ()
+        cls: type[T], tup: tuple, *, offset: int = 0, exclude: FieldNamesSet = ()
     ) -> T:
         names = (f.name for f in cls._fields() if f.name not in exclude)
         kwargs = {name: tup[offset] for offset, name in enumerate(names, start=offset)}
@@ -222,14 +217,14 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def from_dict(
-        cls: Type[T], dct: Dict[str, Any], *, exclude: FieldNamesSet = ()
+        cls: type[T], dct: dict[str, Any], *, exclude: FieldNamesSet = ()
     ) -> T:
         names = {f.name for f in cls._fields() if f.name not in exclude}
         kwargs = {k: v for k, v in dct.items() if k in names}
         return cls(**kwargs)
 
     @classmethod
-    def ensure_model(cls: Type[T], row: Union[T, Mapping[str, Any]]) -> T:
+    def ensure_model(cls: type[T], row: Union[T, Mapping[str, Any]]) -> T:
         if isinstance(row, cls):
             return row
         return cls(**row)
@@ -283,7 +278,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def select_cursor(
-        cls: Type[T],
+        cls: type[T],
         connection: Connection,
         order_by: Union[FieldNames, str] = (),
         for_update: bool = False,
@@ -298,12 +293,12 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def select(
-        cls: Type[T],
+        cls: type[T],
         connection_or_pool: Union[Connection, Pool],
         order_by: Union[FieldNames, str] = (),
         for_update: bool = False,
         where: Where = (),
-    ) -> List[T]:
+    ) -> list[T]:
         return [
             cls(**row)
             for row in await connection_or_pool.fetch(
@@ -312,7 +307,7 @@ class ModelBase(Mapping[str, Any]):
         ]
 
     @classmethod
-    def create_sql(cls: Type[T], **kwargs: Any) -> Fragment:
+    def create_sql(cls: type[T], **kwargs: Any) -> Fragment:
         return sql(
             "INSERT INTO {table} ({fields}) VALUES ({values}) RETURNING {out_fields}",
             table=cls.table_name_sql(),
@@ -323,7 +318,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def create(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], **kwargs: Any
+        cls: type[T], connection_or_pool: Union[Connection, Pool], **kwargs: Any
     ) -> T:
         row = await connection_or_pool.fetchrow(*cls.create_sql(**kwargs))
         return cls(**row)
@@ -372,11 +367,10 @@ class ModelBase(Mapping[str, Any]):
             self.upsert_sql(self.insert_sql(exclude=exclude), exclude=exclude),
         )
         result = await connection_or_pool.fetchrow(*query)
-        is_update = result["xmax"] != 0
-        return is_update
+        return result["xmax"] != 0
 
     @classmethod
-    def delete_multiple_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
+    def delete_multiple_sql(cls: type[T], rows: Iterable[T]) -> Fragment:
         cached = cls._cached(
             ("delete_multiple_sql",),
             lambda: sql(
@@ -394,12 +388,12 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def delete_multiple(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
         return await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
 
     @classmethod
-    def insert_multiple_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
+    def insert_multiple_sql(cls: type[T], rows: Iterable[T]) -> Fragment:
         cached = cls._cached(
             ("insert_multiple_sql",),
             lambda: sql(
@@ -416,7 +410,7 @@ class ModelBase(Mapping[str, Any]):
         )
 
     @classmethod
-    def insert_multiple_array_safe_sql(cls: Type[T], rows: Iterable[T]) -> Fragment:
+    def insert_multiple_array_safe_sql(cls: type[T], rows: Iterable[T]) -> Fragment:
         return sql(
             "INSERT INTO {table} ({fields}) VALUES {values}",
             table=cls.table_name_sql(),
@@ -429,13 +423,13 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def insert_multiple_unnest(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
         return await connection_or_pool.execute(*cls.insert_multiple_sql(rows))
 
     @classmethod
     async def insert_multiple_array_safe(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
         last = ""
         for chunk in chunked(rows, 100):
@@ -446,7 +440,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def insert_multiple(
-        cls: Type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
         if cls.array_safe_insert:
             return await cls.insert_multiple_array_safe(connection_or_pool, rows)
@@ -455,7 +449,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def upsert_multiple_unnest(
-        cls: Type[T],
+        cls: type[T],
         connection_or_pool: Union[Connection, Pool],
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
@@ -466,7 +460,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def upsert_multiple_array_safe(
-        cls: Type[T],
+        cls: type[T],
         connection_or_pool: Union[Connection, Pool],
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
@@ -482,7 +476,7 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def upsert_multiple(
-        cls: Type[T],
+        cls: type[T],
         connection_or_pool: Union[Connection, Pool],
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
@@ -498,9 +492,9 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def _get_equal_ignoring_fn(
-        cls: Type[T], ignore: FieldNamesSet = ()
+        cls: type[T], ignore: FieldNamesSet = ()
     ) -> Callable[[T, T], bool]:
-        env: Dict[str, Any] = dict()
+        env: dict[str, Any] = {}
         func = ["def equal_ignoring(a, b):"]
         for f in cls._fields():
             if f.name not in ignore:
@@ -511,14 +505,14 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def replace_multiple(
-        cls: Type[T],
+        cls: type[T],
         connection: Connection,
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,
         ignore: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
-    ) -> Tuple[List[T], List[T], List[T]]:
+    ) -> tuple[list[T], list[T], list[T]]:
         ignore = sorted(set(ignore) | set(insert_only))
         equal_ignoring = cls._cached(
             ("equal_ignoring", tuple(ignore)),
@@ -553,9 +547,9 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     def _get_differences_ignoring_fn(
-        cls: Type[T], ignore: FieldNamesSet = ()
-    ) -> Callable[[T, T], List[str]]:
-        env: Dict[str, Any] = dict()
+        cls: type[T], ignore: FieldNamesSet = ()
+    ) -> Callable[[T, T], list[str]]:
+        env: dict[str, Any] = {}
         func = [
             "def differences_ignoring(a, b):",
             " diffs = []",
@@ -569,14 +563,14 @@ class ModelBase(Mapping[str, Any]):
 
     @classmethod
     async def replace_multiple_reporting_differences(
-        cls: Type[T],
+        cls: type[T],
         connection: Connection,
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,
         ignore: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
-    ) -> Tuple[List[T], List[Tuple[T, T, List[str]]], List[T]]:
+    ) -> tuple[list[T], list[tuple[T, T, list[str]]], list[T]]:
         ignore = sorted(set(ignore) | set(insert_only))
         differences_ignoring = cls._cached(
             ("differences_ignoring", tuple(ignore)),

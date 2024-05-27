@@ -68,14 +68,16 @@ async def test_replace_multiple(conn):
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 3
     assert await Test.select(conn) == []
 
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=sql("a = 1"))
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
@@ -113,7 +115,8 @@ async def test_replace_multiple_ignore_insert_only(conn):
     c, u, d = await Test.replace_multiple(
         conn, new_data, where=[], ignore=["updated"], insert_only=["created"]
     )
-    assert not c and not d
+    assert not c
+    assert not d
     assert len(u) == 1
 
     db_data = await Test.select(conn, order_by="id")
@@ -152,14 +155,16 @@ async def test_replace_multiple_arrays(conn):
     await Test.insert_multiple(conn, dict(enumerate(data)).values())
 
     c, u, d = await Test.replace_multiple(conn, [], where=[])
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 3
     assert await Test.select(conn) == []
 
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(conn, [], where=sql("a @> ARRAY[1]"))
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
@@ -196,7 +201,8 @@ async def test_replace_multiple_reporting_differences(conn):
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple_reporting_differences(conn, [], where=[])
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 3
     assert await Test.select(conn) == []
 
@@ -205,7 +211,8 @@ async def test_replace_multiple_reporting_differences(conn):
     c, u, d = await Test.replace_multiple_reporting_differences(
         conn, [], where=sql("a = 1")
     )
-    assert not c and not u
+    assert not c
+    assert not u
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 

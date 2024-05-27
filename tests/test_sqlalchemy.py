@@ -7,7 +7,7 @@ from sql_athame import sql
 
 
 @pytest.mark.parametrize(
-    "arg, expected",
+    ("arg", "expected"),
     [
         (42, (42, "Integer()")),
         (bindparam("x", 42, type_=Float()), (42, "Float()")),
@@ -24,7 +24,7 @@ def test_positional(arg, expected):
 
 
 @pytest.mark.parametrize(
-    "arg, expected",
+    ("arg", "expected"),
     [
         (42, (42, "Integer()")),
         (bindparam("x", 42, type_=Float()), (42, "Float()")),
