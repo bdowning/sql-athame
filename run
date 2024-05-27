@@ -10,16 +10,15 @@ tests() {
 
 usage+=("  $0 refmt - reformat code")
 refmt() {
-    poetry run isort sql_athame/**.py tests/**.py
-    poetry run black sql_athame tests
+    poetry run ruff check --select I --fix
+    poetry run ruff format
 }
 
 usage+=("  $0 lint - run linting")
 lint() {
-    poetry run flake8 sql_athame tests
+    poetry run ruff check
+    poetry run ruff format --diff
     poetry run mypy sql_athame/**.py tests/**.py
-    poetry run black --check sql_athame tests
-    poetry run isort --check-only sql_athame/**.py tests/**.py
 }
 
 usage+=("  $0 bump2version {major|minor|patch} - bump version number")
