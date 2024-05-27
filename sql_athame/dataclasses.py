@@ -1,13 +1,16 @@
 import datetime
 import uuid
 from collections.abc import AsyncGenerator, Iterable, Mapping
-from dataclasses import InitVar, dataclass, field, fields
+from dataclasses import Field, InitVar, dataclass, fields
 from typing import (
+    Annotated,
     Any,
     Callable,
     Optional,
     TypeVar,
     Union,
+    get_origin,
+    get_type_hints,
 )
 
 from .base import Fragment, sql
@@ -31,7 +34,7 @@ class ColumnInfo:
 
     constraints: InitVar[Union[str, Iterable[str], None]] = None
 
-    def __post_init__(self, constraints: Union[str, Iterable[str], None]):
+    def __post_init__(self, constraints: Union[str, Iterable[str], None]) -> None:
         if self.create_type == "":
             self.create_type = self.type
             self.type = sql_create_type_map.get(self.type.upper(), self.type)
@@ -40,29 +43,13 @@ class ColumnInfo:
                 constraints = (constraints,)
             self._constraints = tuple(constraints)
 
-    def create_table_string(self):
+    def create_table_string(self) -> str:
         parts = (
             self.create_type,
             *(() if self.nullable else ("NOT NULL",)),
             *self._constraints,
         )
         return " ".join(parts)
-
-
-def model_field_metadata(
-    type: str, nullable: bool = False, constraints: Union[str, Iterable[str]] = ()
-) -> dict[str, Any]:
-    if isinstance(constraints, str):
-        constraints = (constraints,)
-    info = ColumnInfo(type=type, nullable=nullable, constraints=constraints)
-
-    return {"sql_athame": info}
-
-
-def model_field(
-    *, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs: Any
-) -> Any:
-    return field(**kwargs, metadata=model_field_metadata(type, constraints))
 
 
 sql_create_type_map = {
@@ -72,7 +59,7 @@ sql_create_type_map = {
 }
 
 
-sql_type_map: dict[type, tuple[str, bool]] = {
+sql_type_map: dict[Any, tuple[str, bool]] = {
     Optional[bool]: ("BOOLEAN", True),
     Optional[bytes]: ("BYTEA", True),
     Optional[datetime.date]: ("DATE", True),
@@ -92,13 +79,6 @@ sql_type_map: dict[type, tuple[str, bool]] = {
 }
 
 
-def column_info_for_field(field):
-    if "sql_athame" in field.metadata:
-        return field.metadata["sql_athame"]
-    type, nullable = sql_type_map[field.type]
-    return ColumnInfo(type=type, nullable=nullable)
-
-
 T = TypeVar("T", bound="ModelBase")
 U = TypeVar("U")
 
@@ -109,6 +89,7 @@ class ModelBase:
     table_name: str
     primary_key_names: tuple[str, ...]
     array_safe_insert: bool
+    _type_hints: dict[str, type]
 
     def __init_subclass__(
         cls,
@@ -147,11 +128,33 @@ class ModelBase:
             return cls._cache[key]
 
     @classmethod
+    def type_hints(cls) -> dict[str, type]:
+        try:
+            return cls._type_hints
+        except AttributeError:
+            cls._type_hints = get_type_hints(cls, include_extras=True)
+            return cls._type_hints
+
+    @classmethod
+    def column_info_for_field(cls, field: Field) -> ColumnInfo:
+        type_info = cls.type_hints()[field.name]
+        base_type = type_info
+        if get_origin(type_info) is Annotated:
+            base_type = type_info.__origin__  # type: ignore
+            for md in type_info.__metadata__:  # type: ignore
+                if isinstance(md, ColumnInfo):
+                    return md
+        type, nullable = sql_type_map[base_type]
+        return ColumnInfo(type=type, nullable=nullable)
+
+    @classmethod
     def column_info(cls, column: str) -> ColumnInfo:
         try:
             return cls._column_info[column]  # type: ignore
         except AttributeError:
-            cls._column_info = {f.name: column_info_for_field(f) for f in cls._fields()}
+            cls._column_info = {
+                f.name: cls.column_info_for_field(f) for f in cls._fields()
+            }
             return cls._column_info[column]
 
     @classmethod
