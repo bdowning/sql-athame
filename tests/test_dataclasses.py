@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional, Union
 
 import pytest
 
@@ -75,6 +75,13 @@ def test_modelclass_implicit_types():
             ColumnInfo(constraints="REFERENCES foobar"),
             ColumnInfo(constraints="BLAH", nullable=True),
         ]
+        any: Annotated[Any, ColumnInfo(type="TEXT")]
+        any_not_null: Annotated[Any, ColumnInfo(type="TEXT", nullable=False)]
+        obj: Annotated[object, ColumnInfo(type="TEXT")]
+        obj_not_null: Annotated[object, ColumnInfo(type="TEXT", nullable=False)]
+        combined_nullable: Annotated[Union[int, Any], ColumnInfo(type="INTEGER")]
+        null_jsonb: Annotated[Optional[dict], ColumnInfo(type="JSONB")]
+        not_null_jsonb: Annotated[dict, ColumnInfo(type="JSONB")]
 
     assert list(Test.create_table_sql()) == [
         'CREATE TABLE IF NOT EXISTS "table" ('
@@ -83,6 +90,13 @@ def test_modelclass_implicit_types():
         '"baz" UUID, '
         '"quux" INTEGER NOT NULL REFERENCES foobar, '
         '"quuux" INTEGER REFERENCES foobar BLAH, '
+        '"any" TEXT, '
+        '"any_not_null" TEXT NOT NULL, '
+        '"obj" TEXT, '
+        '"obj_not_null" TEXT NOT NULL, '
+        '"combined_nullable" INTEGER, '
+        '"null_jsonb" JSONB, '
+        '"not_null_jsonb" JSONB NOT NULL, '
         'PRIMARY KEY ("foo"))'
     ]
 
