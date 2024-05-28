@@ -6,6 +6,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Annotated, Optional
 
+import pytest
+
 from sql_athame import sql
 from sql_athame.dataclasses import ColumnInfo, ModelBase
 
@@ -67,14 +69,31 @@ def test_modelclass_implicit_types():
         foo: int
         bar: str
         baz: Optional[uuid.UUID]
+        quux: Annotated[int, ColumnInfo(constraints="REFERENCES foobar")]
+        quuux: Annotated[
+            int,
+            ColumnInfo(constraints="REFERENCES foobar"),
+            ColumnInfo(constraints="BLAH", nullable=True),
+        ]
 
     assert list(Test.create_table_sql()) == [
         'CREATE TABLE IF NOT EXISTS "table" ('
         '"foo" INTEGER NOT NULL, '
         '"bar" TEXT NOT NULL, '
         '"baz" UUID, '
+        '"quux" INTEGER NOT NULL REFERENCES foobar, '
+        '"quuux" INTEGER REFERENCES foobar BLAH, '
         'PRIMARY KEY ("foo"))'
     ]
+
+
+def test_modelclass_missing_type():
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="foo"):
+        foo: dict
+
+    with pytest.raises(ValueError, match="Missing SQL type for column 'foo'"):
+        Test.create_table_sql()
 
 
 def test_upsert():
