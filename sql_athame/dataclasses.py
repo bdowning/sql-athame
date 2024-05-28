@@ -1,52 +1,57 @@
 import datetime
 import uuid
-from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
-from dataclasses import dataclass, field, fields
+from collections.abc import AsyncGenerator, Iterable, Mapping
+from dataclasses import Field, InitVar, dataclass, fields
 from typing import (
+    Annotated,
     Any,
     Callable,
     Optional,
     TypeVar,
     Union,
+    get_origin,
+    get_type_hints,
 )
+
+from typing_extensions import TypeAlias
 
 from .base import Fragment, sql
 
-Where = Union[Fragment, Iterable[Fragment]]
+Where: TypeAlias = Union[Fragment, Iterable[Fragment]]
 # KLUDGE to avoid a string argument being valid
-SequenceOfStrings = Union[list[str], tuple[str, ...]]
-FieldNames = SequenceOfStrings
-FieldNamesSet = Union[SequenceOfStrings, set[str]]
+SequenceOfStrings: TypeAlias = Union[list[str], tuple[str, ...]]
+FieldNames: TypeAlias = SequenceOfStrings
+FieldNamesSet: TypeAlias = Union[SequenceOfStrings, set[str]]
 
-Connection = Any
-Pool = Any
+Connection: TypeAlias = Any
+Pool: TypeAlias = Any
 
 
 @dataclass
 class ColumnInfo:
     type: str
-    create_type: str
-    constraints: tuple[str, ...]
+    create_type: str = ""
+    nullable: bool = False
+    _constraints: tuple[str, ...] = ()
 
-    def create_table_string(self):
-        return " ".join((self.create_type, *self.constraints))
+    constraints: InitVar[Union[str, Iterable[str], None]] = None
 
+    def __post_init__(self, constraints: Union[str, Iterable[str], None]) -> None:
+        if self.create_type == "":
+            self.create_type = self.type
+            self.type = sql_create_type_map.get(self.type.upper(), self.type)
+        if constraints is not None:
+            if type(constraints) is str:
+                constraints = (constraints,)
+            self._constraints = tuple(constraints)
 
-def model_field_metadata(
-    type: str, constraints: Union[str, Iterable[str]] = ()
-) -> dict[str, Any]:
-    if isinstance(constraints, str):
-        constraints = (constraints,)
-    info = ColumnInfo(
-        sql_create_type_map.get(type.upper(), type), type, tuple(constraints)
-    )
-    return {"sql_athame": info}
-
-
-def model_field(
-    *, type: str, constraints: Union[str, Iterable[str]] = (), **kwargs: Any
-) -> Any:
-    return field(**kwargs, metadata=model_field_metadata(type, constraints))
+    def create_table_string(self) -> str:
+        parts = (
+            self.create_type,
+            *(() if self.nullable else ("NOT NULL",)),
+            *self._constraints,
+        )
+        return " ".join(parts)
 
 
 sql_create_type_map = {
@@ -56,43 +61,37 @@ sql_create_type_map = {
 }
 
 
-sql_type_map = {
-    Optional[bool]: ("BOOLEAN",),
-    Optional[bytes]: ("BYTEA",),
-    Optional[datetime.date]: ("DATE",),
-    Optional[datetime.datetime]: ("TIMESTAMP",),
-    Optional[float]: ("DOUBLE PRECISION",),
-    Optional[int]: ("INTEGER",),
-    Optional[str]: ("TEXT",),
-    Optional[uuid.UUID]: ("UUID",),
-    bool: ("BOOLEAN", "NOT NULL"),
-    bytes: ("BYTEA", "NOT NULL"),
-    datetime.date: ("DATE", "NOT NULL"),
-    datetime.datetime: ("TIMESTAMP", "NOT NULL"),
-    float: ("DOUBLE PRECISION", "NOT NULL"),
-    int: ("INTEGER", "NOT NULL"),
-    str: ("TEXT", "NOT NULL"),
-    uuid.UUID: ("UUID", "NOT NULL"),
+sql_type_map: dict[Any, tuple[str, bool]] = {
+    Optional[bool]: ("BOOLEAN", True),
+    Optional[bytes]: ("BYTEA", True),
+    Optional[datetime.date]: ("DATE", True),
+    Optional[datetime.datetime]: ("TIMESTAMP", True),
+    Optional[float]: ("DOUBLE PRECISION", True),
+    Optional[int]: ("INTEGER", True),
+    Optional[str]: ("TEXT", True),
+    Optional[uuid.UUID]: ("UUID", True),
+    bool: ("BOOLEAN", False),
+    bytes: ("BYTEA", False),
+    datetime.date: ("DATE", False),
+    datetime.datetime: ("TIMESTAMP", False),
+    float: ("DOUBLE PRECISION", False),
+    int: ("INTEGER", False),
+    str: ("TEXT", False),
+    uuid.UUID: ("UUID", False),
 }
-
-
-def column_info_for_field(field):
-    if "sql_athame" in field.metadata:
-        return field.metadata["sql_athame"]
-    type, *constraints = sql_type_map[field.type]
-    return ColumnInfo(type, type, tuple(constraints))
 
 
 T = TypeVar("T", bound="ModelBase")
 U = TypeVar("U")
 
 
-class ModelBase(Mapping[str, Any]):
+class ModelBase:
     _column_info: Optional[dict[str, ColumnInfo]]
     _cache: dict[tuple, Any]
     table_name: str
     primary_key_names: tuple[str, ...]
     array_safe_insert: bool
+    _type_hints: dict[str, type]
 
     def __init_subclass__(
         cls,
@@ -130,27 +129,34 @@ class ModelBase(Mapping[str, Any]):
             cls._cache[key] = thunk()
             return cls._cache[key]
 
-    def keys(self):
-        return self.field_names()
+    @classmethod
+    def type_hints(cls) -> dict[str, type]:
+        try:
+            return cls._type_hints
+        except AttributeError:
+            cls._type_hints = get_type_hints(cls, include_extras=True)
+            return cls._type_hints
 
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __iter__(self) -> Iterator[Any]:
-        return iter(self.keys())
-
-    def __len__(self) -> int:
-        return len(self.keys())
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
+    @classmethod
+    def column_info_for_field(cls, field: Field) -> ColumnInfo:
+        type_info = cls.type_hints()[field.name]
+        base_type = type_info
+        if get_origin(type_info) is Annotated:
+            base_type = type_info.__origin__  # type: ignore
+            for md in type_info.__metadata__:  # type: ignore
+                if isinstance(md, ColumnInfo):
+                    return md
+        type, nullable = sql_type_map[base_type]
+        return ColumnInfo(type=type, nullable=nullable)
 
     @classmethod
     def column_info(cls, column: str) -> ColumnInfo:
         try:
             return cls._column_info[column]  # type: ignore
         except AttributeError:
-            cls._column_info = {f.name: column_info_for_field(f) for f in cls._fields()}
+            cls._column_info = {
+                f.name: cls.column_info_for_field(f) for f in cls._fields()
+            }
             return cls._column_info[column]
 
     @classmethod

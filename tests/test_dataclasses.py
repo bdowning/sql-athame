@@ -1,21 +1,20 @@
+# ruff: noqa: UP007
+
+from __future__ import annotations
+
 import uuid
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+from typing import Annotated, Optional
 
 from sql_athame import sql
-from sql_athame.dataclasses import ModelBase, model_field_metadata
+from sql_athame.dataclasses import ColumnInfo, ModelBase
 
 
 def test_modelclass():
     @dataclass
     class Test(ModelBase, table_name="table"):
-        foo: int = field(
-            metadata=model_field_metadata(type="INTEGER", constraints="NOT NULL")
-        )
-        bar: str = field(
-            default="hi",
-            metadata=model_field_metadata(type="TEXT", constraints="NOT NULL"),
-        )
+        foo: int
+        bar: str = "hi"
 
     t = Test(42)
 
@@ -96,28 +95,10 @@ def test_upsert():
     ]
 
 
-def test_mapping():
-    @dataclass
-    class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int
-        foo: int
-        bar: str
-
-    t = Test(1, 2, "foo")
-    assert t["id"] == 1
-    assert t["foo"] == 2
-    assert t["bar"] == "foo"
-
-    assert list(t.keys()) == ["id", "foo", "bar"]
-
-    assert dict(t) == {"id": 1, "foo": 2, "bar": "foo"}
-    assert dict(**t) == {"id": 1, "foo": 2, "bar": "foo"}
-
-
 def test_serial():
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int = field(metadata=model_field_metadata(type="SERIAL"))
+        id: Annotated[int, ColumnInfo(type="SERIAL")]
         foo: int
         bar: str
 
@@ -125,7 +106,7 @@ def test_serial():
     assert Test.column_info("id").create_type == "SERIAL"
     assert list(Test.create_table_sql()) == [
         'CREATE TABLE IF NOT EXISTS "table" ('
-        '"id" SERIAL, '
+        '"id" SERIAL NOT NULL, '
         '"foo" INTEGER NOT NULL, '
         '"bar" TEXT NOT NULL, '
         'PRIMARY KEY ("id"))'

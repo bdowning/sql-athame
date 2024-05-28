@@ -1,6 +1,8 @@
 import dataclasses
 from typing import TYPE_CHECKING, Any, Union
 
+from typing_extensions import TypeAlias
+
 
 @dataclasses.dataclass(eq=False)
 class Placeholder:
@@ -15,8 +17,8 @@ class Slot:
     name: str
 
 
-Part = Union[str, Placeholder, Slot, "Fragment"]
-FlatPart = Union[str, Placeholder, Slot]
+Part: TypeAlias = Union[str, Placeholder, Slot, "Fragment"]
+FlatPart: TypeAlias = Union[str, Placeholder, Slot]
 
 if TYPE_CHECKING:
     from .base import Fragment

@@ -1,14 +1,19 @@
+# ruff: noqa: UP007
+
+from __future__ import annotations
+
 import asyncio
 import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
 import asyncpg
 import pytest
+from typing_extensions import TypeAlias
 
-from sql_athame import ModelBase, model_field_metadata, sql
+from sql_athame import ColumnInfo, ModelBase, sql
 
 
 @pytest.fixture(autouse=True)
@@ -137,9 +142,7 @@ async def test_replace_multiple_arrays(conn):
         insert_multiple_mode="array_safe",
     ):
         id: int
-        a: list[int] = field(
-            metadata=model_field_metadata(type="INT[]", constraints="NOT NULL")
-        )
+        a: Annotated[list[int], ColumnInfo(type="INT[]")]
         b: str
 
     await conn.execute(*Test.create_table_sql())
@@ -262,10 +265,13 @@ async def test_replace_multiple_multicolumn_pk(conn):
     ]
 
 
+Serial: TypeAlias = Annotated[int, ColumnInfo(type="SERIAL")]
+
+
 async def test_serial(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int = field(metadata=model_field_metadata(type="SERIAL"))
+        id: Serial
         foo: int
         bar: str
 
@@ -281,8 +287,8 @@ async def test_serial(conn):
 async def test_unnest_json(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int = field(metadata=model_field_metadata(type="SERIAL"))
-        json: Optional[list] = field(metadata=model_field_metadata(type="JSONB"))
+        id: Serial
+        json: Annotated[Optional[list], ColumnInfo(type="JSONB", nullable=True)]
 
     await conn.set_type_codec(
         "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
@@ -307,7 +313,7 @@ async def test_unnest_json(conn):
 async def test_unnest_empty(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
-        id: int = field(metadata=model_field_metadata(type="SERIAL"))
+        id: Serial
 
     await conn.execute(*Test.create_table_sql())
 
