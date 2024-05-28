@@ -13,16 +13,18 @@ from typing import (
     get_type_hints,
 )
 
+from typing_extensions import TypeAlias
+
 from .base import Fragment, sql
 
-Where = Union[Fragment, Iterable[Fragment]]
+Where: TypeAlias = Union[Fragment, Iterable[Fragment]]
 # KLUDGE to avoid a string argument being valid
-SequenceOfStrings = Union[list[str], tuple[str, ...]]
-FieldNames = SequenceOfStrings
-FieldNamesSet = Union[SequenceOfStrings, set[str]]
+SequenceOfStrings: TypeAlias = Union[list[str], tuple[str, ...]]
+FieldNames: TypeAlias = SequenceOfStrings
+FieldNamesSet: TypeAlias = Union[SequenceOfStrings, set[str]]
 
-Connection = Any
-Pool = Any
+Connection: TypeAlias = Any
+Pool: TypeAlias = Any
 
 
 @dataclass
