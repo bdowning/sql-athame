@@ -135,8 +135,8 @@ def test_serial():
         foo: int
         bar: str
 
-    assert Test.column_info("id").type == "INTEGER"
-    assert Test.column_info("id").create_type == "SERIAL"
+    assert Test.column_info()["id"].type == "INTEGER"
+    assert Test.column_info()["id"].create_type == "SERIAL"
     assert list(Test.create_table_sql()) == [
         'CREATE TABLE IF NOT EXISTS "table" ('
         '"id" SERIAL NOT NULL, '
