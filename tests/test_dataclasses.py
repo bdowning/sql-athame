@@ -152,3 +152,23 @@ def test_serial():
         42,
         "foo",
     ]
+
+
+def test_serde():
+    @dataclass
+    class Test(ModelBase, table_name="table"):
+        foo: Annotated[
+            str,
+            ColumnInfo(serialize=lambda x: x.upper(), deserialize=lambda x: x.lower()),
+        ]
+        bar: str
+
+    assert Test("foo", "bar").field_values() == ["FOO", "bar"]
+    assert Test.create_sql(foo="foo", bar="bar").query() == (
+        'INSERT INTO "table" ("foo", "bar") VALUES ($1, $2) RETURNING "foo", "bar"',
+        ["FOO", "bar"],
+    )
+
+    assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
+    # make sure the monkey patching didn't screw things up
+    assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
