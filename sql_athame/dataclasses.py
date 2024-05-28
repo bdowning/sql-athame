@@ -10,6 +10,7 @@ from typing import (
     Optional,
     TypeVar,
     Union,
+    get_args,
     get_origin,
     get_type_hints,
 )
@@ -84,6 +85,22 @@ class ConcreteColumnInfo:
         return " ".join(parts)
 
 
+NULLABLE_TYPES = (type(None), Any, object)
+
+
+def split_nullable(typ: type) -> tuple[bool, type]:
+    nullable = typ in NULLABLE_TYPES
+    if get_origin(typ) is Union:
+        args = []
+        for arg in get_args(typ):
+            if arg in NULLABLE_TYPES:
+                nullable = True
+            else:
+                args.append(arg)
+        return nullable, Union[tuple(args)]  # type: ignore
+    return nullable, typ
+
+
 sql_create_type_map = {
     "BIGSERIAL": "BIGINT",
     "SERIAL": "INTEGER",
@@ -91,23 +108,15 @@ sql_create_type_map = {
 }
 
 
-sql_type_map: dict[Any, tuple[str, bool]] = {
-    Optional[bool]: ("BOOLEAN", True),
-    Optional[bytes]: ("BYTEA", True),
-    Optional[datetime.date]: ("DATE", True),
-    Optional[datetime.datetime]: ("TIMESTAMP", True),
-    Optional[float]: ("DOUBLE PRECISION", True),
-    Optional[int]: ("INTEGER", True),
-    Optional[str]: ("TEXT", True),
-    Optional[uuid.UUID]: ("UUID", True),
-    bool: ("BOOLEAN", False),
-    bytes: ("BYTEA", False),
-    datetime.date: ("DATE", False),
-    datetime.datetime: ("TIMESTAMP", False),
-    float: ("DOUBLE PRECISION", False),
-    int: ("INTEGER", False),
-    str: ("TEXT", False),
-    uuid.UUID: ("UUID", False),
+sql_type_map: dict[Any, str] = {
+    bool: "BOOLEAN",
+    bytes: "BYTEA",
+    datetime.date: "DATE",
+    datetime.datetime: "TIMESTAMP",
+    float: "DOUBLE PRECISION",
+    int: "INTEGER",
+    str: "TEXT",
+    uuid.UUID: "UUID",
 }
 
 
@@ -171,16 +180,16 @@ class ModelBase:
     def column_info_for_field(cls, field: Field) -> ConcreteColumnInfo:
         type_info = cls.type_hints()[field.name]
         base_type = type_info
+        metadata = []
         if get_origin(type_info) is Annotated:
-            base_type = type_info.__origin__  # type: ignore
-        info = []
+            base_type, *metadata = get_args(type_info)
+        nullable, base_type = split_nullable(base_type)
+        info = [ColumnInfo(nullable=nullable)]
         if base_type in sql_type_map:
-            _type, nullable = sql_type_map[base_type]
-            info.append(ColumnInfo(type=_type, nullable=nullable))
-        if get_origin(type_info) is Annotated:
-            for md in type_info.__metadata__:  # type: ignore
-                if isinstance(md, ColumnInfo):
-                    info.append(md)
+            info.append(ColumnInfo(type=sql_type_map[base_type]))
+        for md in metadata:
+            if isinstance(md, ColumnInfo):
+                info.append(md)
         return ConcreteColumnInfo.from_column_info(field.name, *info)
 
     @classmethod
