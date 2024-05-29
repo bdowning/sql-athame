@@ -1,5 +1,6 @@
 import datetime
 import functools
+import sys
 import uuid
 from collections.abc import AsyncGenerator, Iterable, Mapping
 from dataclasses import Field, InitVar, dataclass, fields
@@ -105,12 +106,18 @@ class ConcreteColumnInfo:
         return value
 
 
+UNION_TYPES: tuple = (Union,)
+if sys.version_info >= (3, 10):
+    from types import UnionType
+
+    UNION_TYPES = (Union, UnionType)
+
 NULLABLE_TYPES = (type(None), Any, object)
 
 
 def split_nullable(typ: type) -> tuple[bool, type]:
     nullable = typ in NULLABLE_TYPES
-    if get_origin(typ) is Union:
+    if get_origin(typ) in UNION_TYPES:
         args = []
         for arg in get_args(typ):
             if arg in NULLABLE_TYPES:

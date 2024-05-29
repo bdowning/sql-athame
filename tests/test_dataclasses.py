@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
 from dataclasses import dataclass
 from typing import Annotated, Any, Optional, Union
@@ -97,6 +98,27 @@ def test_modelclass_implicit_types():
         '"combined_nullable" INTEGER, '
         '"null_jsonb" JSONB, '
         '"not_null_jsonb" JSONB NOT NULL, '
+        'PRIMARY KEY ("foo"))'
+    ]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="needs python3.10 or greater")
+def test_py310_unions():
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="foo"):
+        foo: int
+        bar: str
+        baz: uuid.UUID | None
+        foo_nullable: int | None
+        bar_nullable: str | None
+
+    assert list(Test.create_table_sql()) == [
+        'CREATE TABLE IF NOT EXISTS "table" ('
+        '"foo" INTEGER NOT NULL, '
+        '"bar" TEXT NOT NULL, '
+        '"baz" UUID, '
+        '"foo_nullable" INTEGER, '
+        '"bar_nullable" TEXT, '
         'PRIMARY KEY ("foo"))'
     ]
 
