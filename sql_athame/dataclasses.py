@@ -8,6 +8,7 @@ from typing import (
     Annotated,
     Any,
     Callable,
+    Generic,
     Optional,
     TypeVar,
     Union,
@@ -251,7 +252,7 @@ class ModelBase:
             if ci.field.name not in exclude:
                 if ci.serialize:
                     env[f"_ser_{ci.field.name}"] = ci.serialize
-                    func.append(f"_ser_{ci.field.name}(self.{ci.field.name}), ")
+                    func.append(f"_ser_{ci.field.name}(self.{ci.field.name}),")
                 else:
                     func.append(f"self.{ci.field.name},")
         func += ["]"]
@@ -588,7 +589,7 @@ class ModelBase:
         return env["equal_ignoring"]
 
     @classmethod
-    async def replace_multiple(
+    async def plan_replace_multiple(
         cls: type[T],
         connection: Connection,
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
@@ -596,7 +597,7 @@ class ModelBase:
         where: Where,
         ignore: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
-    ) -> tuple[list[T], list[T], list[T]]:
+    ) -> "ReplaceMultiplePlan[T]":
         ignore = sorted(set(ignore) | set(insert_only))
         equal_ignoring = cls._cached(
             ("equal_ignoring", tuple(ignore)),
@@ -620,14 +621,23 @@ class ModelBase:
 
         created = list(pending.values())
 
-        if created or updated:
-            await cls.upsert_multiple(
-                connection, (*created, *updated), insert_only=insert_only
-            )
-        if deleted:
-            await cls.delete_multiple(connection, deleted)
+        return ReplaceMultiplePlan(cls, insert_only, created, updated, deleted)
 
-        return created, updated, deleted
+    @classmethod
+    async def replace_multiple(
+        cls: type[T],
+        connection: Connection,
+        rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
+        *,
+        where: Where,
+        ignore: FieldNamesSet = (),
+        insert_only: FieldNamesSet = (),
+    ) -> tuple[list[T], list[T], list[T]]:
+        plan = await cls.plan_replace_multiple(
+            connection, rows, where=where, ignore=ignore, insert_only=insert_only
+        )
+        await plan.execute(connection)
+        return plan.cud
 
     @classmethod
     def _get_differences_ignoring_fn(
@@ -692,6 +702,33 @@ class ModelBase:
             await cls.delete_multiple(connection, deleted)
 
         return created, updated_triples, deleted
+
+
+@dataclass
+class ReplaceMultiplePlan(Generic[T]):
+    model_class: type[T]
+    insert_only: FieldNamesSet
+    created: list[T]
+    updated: list[T]
+    deleted: list[T]
+
+    @property
+    def cud(self) -> tuple[list[T], list[T], list[T]]:
+        return (self.created, self.updated, self.deleted)
+
+    async def execute_upserts(self, connection: Connection) -> None:
+        if self.created or self.updated:
+            await self.model_class.upsert_multiple(
+                connection, (*self.created, *self.updated), insert_only=self.insert_only
+            )
+
+    async def execute_deletes(self, connection: Connection) -> None:
+        if self.deleted:
+            await self.model_class.delete_multiple(connection, self.deleted)
+
+    async def execute(self, connection: Connection) -> None:
+        await self.execute_upserts(connection)
+        await self.execute_deletes(connection)
 
 
 def chunked(lst, n):
