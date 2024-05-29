@@ -1,5 +1,6 @@
 import datetime
 import functools
+import sys
 import uuid
 from collections.abc import AsyncGenerator, Iterable, Mapping
 from dataclasses import Field, InitVar, dataclass, fields
@@ -34,9 +35,12 @@ class ColumnInfo:
     type: Optional[str] = None
     create_type: Optional[str] = None
     nullable: Optional[bool] = None
-    _constraints: tuple[str, ...] = ()
 
+    _constraints: tuple[str, ...] = ()
     constraints: InitVar[Union[str, Iterable[str], None]] = None
+
+    serialize: Optional[Callable[[Any], Any]] = None
+    deserialize: Optional[Callable[[Any], Any]] = None
 
     def __post_init__(self, constraints: Union[str, Iterable[str], None]) -> None:
         if constraints is not None:
@@ -51,29 +55,41 @@ class ColumnInfo:
             create_type=b.create_type if b.create_type is not None else a.create_type,
             nullable=b.nullable if b.nullable is not None else a.nullable,
             _constraints=(*a._constraints, *b._constraints),
+            serialize=b.serialize if b.serialize is not None else a.serialize,
+            deserialize=b.deserialize if b.deserialize is not None else a.deserialize,
         )
 
 
 @dataclass
 class ConcreteColumnInfo:
+    field: Field
+    type_hint: type
     type: str
     create_type: str
     nullable: bool
     constraints: tuple[str, ...]
+    serialize: Optional[Callable[[Any], Any]] = None
+    deserialize: Optional[Callable[[Any], Any]] = None
 
     @staticmethod
-    def from_column_info(name: str, *args: ColumnInfo) -> "ConcreteColumnInfo":
+    def from_column_info(
+        field: Field, type_hint: Any, *args: ColumnInfo
+    ) -> "ConcreteColumnInfo":
         info = functools.reduce(ColumnInfo.merge, args, ColumnInfo())
         if info.create_type is None and info.type is not None:
             info.create_type = info.type
             info.type = sql_create_type_map.get(info.type.upper(), info.type)
         if type(info.type) is not str or type(info.create_type) is not str:
-            raise ValueError(f"Missing SQL type for column {name!r}")
+            raise ValueError(f"Missing SQL type for column {field.name!r}")
         return ConcreteColumnInfo(
+            field=field,
+            type_hint=type_hint,
             type=info.type,
             create_type=info.create_type,
             nullable=bool(info.nullable),
             constraints=info._constraints,
+            serialize=info.serialize,
+            deserialize=info.deserialize,
         )
 
     def create_table_string(self) -> str:
@@ -84,13 +100,24 @@ class ConcreteColumnInfo:
         )
         return " ".join(parts)
 
+    def maybe_serialize(self, value: Any) -> Any:
+        if self.serialize:
+            return self.serialize(value)
+        return value
+
+
+UNION_TYPES: tuple = (Union,)
+if sys.version_info >= (3, 10):
+    from types import UnionType
+
+    UNION_TYPES = (Union, UnionType)
 
 NULLABLE_TYPES = (type(None), Any, object)
 
 
 def split_nullable(typ: type) -> tuple[bool, type]:
     nullable = typ in NULLABLE_TYPES
-    if get_origin(typ) is Union:
+    if get_origin(typ) in UNION_TYPES:
         args = []
         for arg in get_args(typ):
             if arg in NULLABLE_TYPES:
@@ -108,7 +135,7 @@ sql_create_type_map = {
 }
 
 
-sql_type_map: dict[Any, str] = {
+sql_type_map: dict[type, str] = {
     bool: "BOOLEAN",
     bytes: "BYTEA",
     datetime.date: "DATE",
@@ -125,12 +152,11 @@ U = TypeVar("U")
 
 
 class ModelBase:
-    _column_info: Optional[dict[str, ConcreteColumnInfo]]
+    _column_info: dict[str, ConcreteColumnInfo]
     _cache: dict[tuple, Any]
     table_name: str
     primary_key_names: tuple[str, ...]
     array_safe_insert: bool
-    _type_hints: dict[str, type]
 
     def __init_subclass__(
         cls,
@@ -154,13 +180,6 @@ class ModelBase:
             cls.primary_key_names = tuple(primary_key)
 
     @classmethod
-    def _fields(cls):
-        # wrapper to ignore typing weirdness: 'Argument 1 to "fields"
-        # has incompatible type "..."; expected "DataclassInstance |
-        # type[DataclassInstance]"'
-        return fields(cls)  # type: ignore
-
-    @classmethod
     def _cached(cls, key: tuple, thunk: Callable[[], U]) -> U:
         try:
             return cls._cache[key]
@@ -169,20 +188,11 @@ class ModelBase:
             return cls._cache[key]
 
     @classmethod
-    def type_hints(cls) -> dict[str, type]:
-        try:
-            return cls._type_hints
-        except AttributeError:
-            cls._type_hints = get_type_hints(cls, include_extras=True)
-            return cls._type_hints
-
-    @classmethod
-    def column_info_for_field(cls, field: Field) -> ConcreteColumnInfo:
-        type_info = cls.type_hints()[field.name]
-        base_type = type_info
+    def column_info_for_field(cls, field: Field, type_hint: type) -> ConcreteColumnInfo:
+        base_type = type_hint
         metadata = []
-        if get_origin(type_info) is Annotated:
-            base_type, *metadata = get_args(type_info)
+        if get_origin(type_hint) is Annotated:
+            base_type, *metadata = get_args(type_hint)
         nullable, base_type = split_nullable(base_type)
         info = [ColumnInfo(nullable=nullable)]
         if base_type in sql_type_map:
@@ -190,17 +200,19 @@ class ModelBase:
         for md in metadata:
             if isinstance(md, ColumnInfo):
                 info.append(md)
-        return ConcreteColumnInfo.from_column_info(field.name, *info)
+        return ConcreteColumnInfo.from_column_info(field, type_hint, *info)
 
     @classmethod
-    def column_info(cls, column: str) -> ConcreteColumnInfo:
+    def column_info(cls) -> dict[str, ConcreteColumnInfo]:
         try:
-            return cls._column_info[column]  # type: ignore
+            return cls._column_info
         except AttributeError:
+            type_hints = get_type_hints(cls, include_extras=True)
             cls._column_info = {
-                f.name: cls.column_info_for_field(f) for f in cls._fields()
+                f.name: cls.column_info_for_field(f, type_hints[f.name])
+                for f in fields(cls)  # type: ignore
             }
-            return cls._column_info[column]
+            return cls._column_info
 
     @classmethod
     def table_name_sql(cls, *, prefix: Optional[str] = None) -> Fragment:
@@ -212,7 +224,11 @@ class ModelBase:
 
     @classmethod
     def field_names(cls, *, exclude: FieldNamesSet = ()) -> list[str]:
-        return [f.name for f in cls._fields() if f.name not in exclude]
+        return [
+            ci.field.name
+            for ci in cls.column_info().values()
+            if ci.field.name not in exclude
+        ]
 
     @classmethod
     def field_names_sql(
@@ -231,9 +247,13 @@ class ModelBase:
     ) -> Callable[[T], list[Any]]:
         env: dict[str, Any] = {}
         func = ["def get_field_values(self): return ["]
-        for f in cls._fields():
-            if f.name not in exclude:
-                func.append(f"self.{f.name},")
+        for ci in cls.column_info().values():
+            if ci.field.name not in exclude:
+                if ci.serialize:
+                    env[f"_ser_{ci.field.name}"] = ci.serialize
+                    func.append(f"_ser_{ci.field.name}(self.{ci.field.name}), ")
+                else:
+                    func.append(f"self.{ci.field.name},")
         func += ["]"]
         exec(" ".join(func), env)
         return env["get_field_values"]
@@ -257,36 +277,46 @@ class ModelBase:
             return [sql.value(value) for value in self.field_values()]
 
     @classmethod
-    def from_tuple(
-        cls: type[T], tup: tuple, *, offset: int = 0, exclude: FieldNamesSet = ()
-    ) -> T:
-        names = (f.name for f in cls._fields() if f.name not in exclude)
-        kwargs = {name: tup[offset] for offset, name in enumerate(names, start=offset)}
-        return cls(**kwargs)
+    def _get_from_mapping_fn(cls: type[T]) -> Callable[[Mapping[str, Any]], T]:
+        env: dict[str, Any] = {"cls": cls}
+        func = ["def from_mapping(mapping):"]
+        if not any(ci.deserialize for ci in cls.column_info().values()):
+            func.append(" return cls(**mapping)")
+        else:
+            func.append(" deser_dict = dict(mapping)")
+            for ci in cls.column_info().values():
+                if ci.deserialize:
+                    env[f"_deser_{ci.field.name}"] = ci.deserialize
+                    func.append(f" if {ci.field.name!r} in deser_dict:")
+                    func.append(
+                        f"  deser_dict[{ci.field.name!r}] = _deser_{ci.field.name}(deser_dict[{ci.field.name!r}])"
+                    )
+            func.append(" return cls(**deser_dict)")
+        exec("\n".join(func), env)
+        return env["from_mapping"]
 
     @classmethod
-    def from_dict(
-        cls: type[T], dct: dict[str, Any], *, exclude: FieldNamesSet = ()
-    ) -> T:
-        names = {f.name for f in cls._fields() if f.name not in exclude}
-        kwargs = {k: v for k, v in dct.items() if k in names}
-        return cls(**kwargs)
+    def from_mapping(cls: type[T], mapping: Mapping[str, Any], /) -> T:
+        # KLUDGE nasty but... efficient?
+        from_mapping_fn = cls._get_from_mapping_fn()
+        cls.from_mapping = from_mapping_fn  # type: ignore
+        return from_mapping_fn(mapping)
 
     @classmethod
     def ensure_model(cls: type[T], row: Union[T, Mapping[str, Any]]) -> T:
         if isinstance(row, cls):
             return row
-        return cls(**row)
+        return cls.from_mapping(row)  # type: ignore
 
     @classmethod
     def create_table_sql(cls) -> Fragment:
         entries = [
             sql(
                 "{} {}",
-                sql.identifier(f.name),
-                sql.literal(cls.column_info(f.name).create_table_string()),
+                sql.identifier(ci.field.name),
+                sql.literal(ci.create_table_string()),
             )
-            for f in cls._fields()
+            for ci in cls.column_info().values()
         ]
         if cls.primary_key_names:
             entries += [sql("PRIMARY KEY ({})", sql.list(cls.primary_key_names_sql()))]
@@ -338,7 +368,7 @@ class ModelBase:
             *cls.select_sql(order_by=order_by, for_update=for_update, where=where),
             prefetch=prefetch,
         ):
-            yield cls(**row)
+            yield cls.from_mapping(row)
 
     @classmethod
     async def select(
@@ -349,7 +379,7 @@ class ModelBase:
         where: Where = (),
     ) -> list[T]:
         return [
-            cls(**row)
+            cls.from_mapping(row)
             for row in await connection_or_pool.fetch(
                 *cls.select_sql(order_by=order_by, for_update=for_update, where=where)
             )
@@ -357,11 +387,14 @@ class ModelBase:
 
     @classmethod
     def create_sql(cls: type[T], **kwargs: Any) -> Fragment:
+        column_info = cls.column_info()
         return sql(
             "INSERT INTO {table} ({fields}) VALUES ({values}) RETURNING {out_fields}",
             table=cls.table_name_sql(),
-            fields=sql.list(sql.identifier(x) for x in kwargs.keys()),
-            values=sql.list(sql.value(x) for x in kwargs.values()),
+            fields=sql.list(sql.identifier(k) for k in kwargs.keys()),
+            values=sql.list(
+                sql.value(column_info[k].maybe_serialize(v)) for k, v in kwargs.items()
+            ),
             out_fields=sql.list(cls.field_names_sql()),
         )
 
@@ -370,7 +403,7 @@ class ModelBase:
         cls: type[T], connection_or_pool: Union[Connection, Pool], **kwargs: Any
     ) -> T:
         row = await connection_or_pool.fetchrow(*cls.create_sql(**kwargs))
-        return cls(**row)
+        return cls.from_mapping(row)
 
     def insert_sql(self, exclude: FieldNamesSet = ()) -> Fragment:
         cached = self._cached(
@@ -428,10 +461,11 @@ class ModelBase:
                 pks=sql.list(sql.identifier(pk) for pk in cls.primary_key_names),
             ).compile(),
         )
+        column_info = cls.column_info()
         return cached(
             unnest=sql.unnest(
                 (row.primary_key() for row in rows),
-                (cls.column_info(pk).type for pk in cls.primary_key_names),
+                (column_info[pk].type for pk in cls.primary_key_names),
             ),
         )
 
@@ -451,10 +485,11 @@ class ModelBase:
                 fields=sql.list(cls.field_names_sql()),
             ).compile(),
         )
+        column_info = cls.column_info()
         return cached(
             unnest=sql.unnest(
                 (row.field_values() for row in rows),
-                (cls.column_info(name).type for name in cls.field_names()),
+                (column_info[name].type for name in cls.field_names()),
             ),
         )
 
@@ -545,9 +580,9 @@ class ModelBase:
     ) -> Callable[[T, T], bool]:
         env: dict[str, Any] = {}
         func = ["def equal_ignoring(a, b):"]
-        for f in cls._fields():
-            if f.name not in ignore:
-                func.append(f" if a.{f.name} != b.{f.name}: return False")
+        for ci in cls.column_info().values():
+            if ci.field.name not in ignore:
+                func.append(f" if a.{ci.field.name} != b.{ci.field.name}: return False")
         func += [" return True"]
         exec("\n".join(func), env)
         return env["equal_ignoring"]
@@ -603,9 +638,11 @@ class ModelBase:
             "def differences_ignoring(a, b):",
             " diffs = []",
         ]
-        for f in cls._fields():
-            if f.name not in ignore:
-                func.append(f" if a.{f.name} != b.{f.name}: diffs.append({f.name!r})")
+        for ci in cls.column_info().values():
+            if ci.field.name not in ignore:
+                func.append(
+                    f" if a.{ci.field.name} != b.{ci.field.name}: diffs.append({ci.field.name!r})"
+                )
         func += [" return diffs"]
         exec("\n".join(func), env)
         return env["differences_ignoring"]

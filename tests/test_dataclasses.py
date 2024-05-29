@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
 from dataclasses import dataclass
 from typing import Annotated, Any, Optional, Union
@@ -101,6 +102,27 @@ def test_modelclass_implicit_types():
     ]
 
 
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="needs python3.10 or greater")
+def test_py310_unions():
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="foo"):
+        foo: int
+        bar: str
+        baz: uuid.UUID | None
+        foo_nullable: int | None
+        bar_nullable: str | None
+
+    assert list(Test.create_table_sql()) == [
+        'CREATE TABLE IF NOT EXISTS "table" ('
+        '"foo" INTEGER NOT NULL, '
+        '"bar" TEXT NOT NULL, '
+        '"baz" UUID, '
+        '"foo_nullable" INTEGER, '
+        '"bar_nullable" TEXT, '
+        'PRIMARY KEY ("foo"))'
+    ]
+
+
 def test_modelclass_missing_type():
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="foo"):
@@ -135,8 +157,8 @@ def test_serial():
         foo: int
         bar: str
 
-    assert Test.column_info("id").type == "INTEGER"
-    assert Test.column_info("id").create_type == "SERIAL"
+    assert Test.column_info()["id"].type == "INTEGER"
+    assert Test.column_info()["id"].create_type == "SERIAL"
     assert list(Test.create_table_sql()) == [
         'CREATE TABLE IF NOT EXISTS "table" ('
         '"id" SERIAL NOT NULL, '
@@ -152,3 +174,23 @@ def test_serial():
         42,
         "foo",
     ]
+
+
+def test_serde():
+    @dataclass
+    class Test(ModelBase, table_name="table"):
+        foo: Annotated[
+            str,
+            ColumnInfo(serialize=lambda x: x.upper(), deserialize=lambda x: x.lower()),
+        ]
+        bar: str
+
+    assert Test("foo", "bar").field_values() == ["FOO", "bar"]
+    assert Test.create_sql(foo="foo", bar="bar").query() == (
+        'INSERT INTO "table" ("foo", "bar") VALUES ($1, $2) RETURNING "foo", "bar"',
+        ["FOO", "bar"],
+    )
+
+    assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
+    # make sure the monkey patching didn't screw things up
+    assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
