@@ -25,6 +25,7 @@ jobs:
           POSTGRES_PASSWORD: password
     env:
       PGPORT: 5432
+      UV_LOCKED: 1
     steps:
       - uses: actions/checkout@v4
 
