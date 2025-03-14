@@ -57,6 +57,14 @@ def test_modelclass():
         "hi",
     ]
 
+    assert list(Test.insert_multiple_executemany_chunk_sql(1)) == [
+        'INSERT INTO "table" ("foo", "bar") VALUES ($1, $2)'
+    ]
+
+    assert list(Test.insert_multiple_executemany_chunk_sql(3)) == [
+        'INSERT INTO "table" ("foo", "bar") VALUES ($1, $2), ($3, $4), ($5, $6)'
+    ]
+
     assert sql(
         "INSERT INTO table ({}) VALUES ({})",
         sql(",").join(t.field_names_sql()),
