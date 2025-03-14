@@ -157,7 +157,7 @@ class ModelBase:
     _cache: dict[tuple, Any]
     table_name: str
     primary_key_names: tuple[str, ...]
-    array_safe_insert: bool
+    insert_multiple_mode: str
 
     def __init_subclass__(
         cls,
@@ -169,12 +169,9 @@ class ModelBase:
     ):
         cls._cache = {}
         cls.table_name = table_name
-        if insert_multiple_mode == "array_safe":
-            cls.array_safe_insert = True
-        elif insert_multiple_mode == "unnest":
-            cls.array_safe_insert = False
-        else:
+        if insert_multiple_mode not in ("array_safe", "unnest", "executemany"):
             raise ValueError("Unknown `insert_multiple_mode`")
+        cls.insert_multiple_mode = insert_multiple_mode
         if isinstance(primary_key, str):
             cls.primary_key_names = (primary_key,)
         else:
@@ -357,7 +354,17 @@ class ModelBase:
         return query
 
     @classmethod
-    async def select_cursor(
+    async def cursor_from(
+        cls: type[T],
+        connection: Connection,
+        query: Fragment,
+        prefetch: int = 1000,
+    ) -> AsyncGenerator[T, None]:
+        async for row in connection.cursor(*query, prefetch=prefetch):
+            yield cls.from_mapping(row)
+
+    @classmethod
+    def select_cursor(
         cls: type[T],
         connection: Connection,
         order_by: Union[FieldNames, str] = (),
@@ -365,11 +372,19 @@ class ModelBase:
         where: Where = (),
         prefetch: int = 1000,
     ) -> AsyncGenerator[T, None]:
-        async for row in connection.cursor(
-            *cls.select_sql(order_by=order_by, for_update=for_update, where=where),
+        return cls.cursor_from(
+            connection,
+            cls.select_sql(order_by=order_by, for_update=for_update, where=where),
             prefetch=prefetch,
-        ):
-            yield cls.from_mapping(row)
+        )
+
+    @classmethod
+    async def fetch_from(
+        cls: type[T],
+        connection_or_pool: Union[Connection, Pool],
+        query: Fragment,
+    ) -> list[T]:
+        return [cls.from_mapping(row) for row in await connection_or_pool.fetch(*query)]
 
     @classmethod
     async def select(
@@ -379,12 +394,10 @@ class ModelBase:
         for_update: bool = False,
         where: Where = (),
     ) -> list[T]:
-        return [
-            cls.from_mapping(row)
-            for row in await connection_or_pool.fetch(
-                *cls.select_sql(order_by=order_by, for_update=for_update, where=where)
-            )
-        ]
+        return await cls.fetch_from(
+            connection_or_pool,
+            cls.select_sql(order_by=order_by, for_update=for_update, where=where),
+        )
 
     @classmethod
     def create_sql(cls: type[T], **kwargs: Any) -> Fragment:
@@ -507,6 +520,37 @@ class ModelBase:
         )
 
     @classmethod
+    def insert_multiple_executemany_chunk_sql(
+        cls: type[T], chunk_size: int
+    ) -> Fragment:
+        def generate() -> Fragment:
+            columns = len(cls.column_info())
+            values = ", ".join(
+                f"({', '.join(f'${i}' for i in chunk)})"
+                for chunk in chunked(range(1, columns * chunk_size + 1), columns)
+            )
+            return sql(
+                "INSERT INTO {table} ({fields}) VALUES {values}",
+                table=cls.table_name_sql(),
+                fields=sql.list(cls.field_names_sql()),
+                values=sql.literal(values),
+            ).flatten()
+
+        return cls._cached(
+            ("insert_multiple_executemany_chunk", chunk_size),
+            generate,
+        )
+
+    @classmethod
+    async def insert_multiple_executemany(
+        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+    ) -> None:
+        args = [r.field_values() for r in rows]
+        query = cls.insert_multiple_executemany_chunk_sql(1).query()[0]
+        if args:
+            await connection_or_pool.executemany(query, args)
+
+    @classmethod
     async def insert_multiple_unnest(
         cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
@@ -527,10 +571,27 @@ class ModelBase:
     async def insert_multiple(
         cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
     ) -> str:
-        if cls.array_safe_insert:
+        if cls.insert_multiple_mode == "executemany":
+            await cls.insert_multiple_executemany(connection_or_pool, rows)
+            return "INSERT"
+        elif cls.insert_multiple_mode == "array_safe":
             return await cls.insert_multiple_array_safe(connection_or_pool, rows)
         else:
             return await cls.insert_multiple_unnest(connection_or_pool, rows)
+
+    @classmethod
+    async def upsert_multiple_executemany(
+        cls: type[T],
+        connection_or_pool: Union[Connection, Pool],
+        rows: Iterable[T],
+        insert_only: FieldNamesSet = (),
+    ) -> None:
+        args = [r.field_values() for r in rows]
+        query = cls.upsert_sql(
+            cls.insert_multiple_executemany_chunk_sql(1), exclude=insert_only
+        ).query()[0]
+        if args:
+            await connection_or_pool.executemany(query, args)
 
     @classmethod
     async def upsert_multiple_unnest(
@@ -566,7 +627,12 @@ class ModelBase:
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
     ) -> str:
-        if cls.array_safe_insert:
+        if cls.insert_multiple_mode == "executemany":
+            await cls.upsert_multiple_executemany(
+                connection_or_pool, rows, insert_only=insert_only
+            )
+            return "INSERT"
+        elif cls.insert_multiple_mode == "array_safe":
             return await cls.upsert_multiple_array_safe(
                 connection_or_pool, rows, insert_only=insert_only
             )

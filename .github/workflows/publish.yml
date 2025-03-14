@@ -9,13 +9,19 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      POETRY_PYPI_TOKEN_PYPI: ${{ secrets.POETRY_PYPI_TOKEN_PYPI }}
+      UV_PUBLISH_TOKEN: ${{ secrets.POETRY_PYPI_TOKEN_PYPI }}
     steps:
       - uses: actions/checkout@v4
-      - run: pipx install poetry
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.6"
+          enable-cache: true
+          python-version: '3.12'
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: poetry
-      - run: poetry build
-      - run: poetry publish
+
+      - run: uv build
+      - run: uv publish

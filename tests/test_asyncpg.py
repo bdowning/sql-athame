@@ -133,13 +133,14 @@ async def test_replace_multiple_ignore_insert_only(conn):
     assert db.updated == new.updated
 
 
-async def test_replace_multiple_arrays(conn):
+@pytest.mark.parametrize("insert_multiple_mode", ["array_safe", "executemany"])
+async def test_replace_multiple_arrays(conn, insert_multiple_mode):
     @dataclass(order=True)
     class Test(
         ModelBase,
         table_name="test",
         primary_key="id",
-        insert_multiple_mode="array_safe",
+        insert_multiple_mode=insert_multiple_mode,
     ):
         id: int
         a: Annotated[list[int], ColumnInfo(type="INT[]")]
