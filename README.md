@@ -383,4 +383,4 @@ TODO, for now read the [source](sql_athame/dataclasses.py).
 MIT.
 
 ---
-Copyright (c) 2019, 2020 Brian Downing
+Copyright (c) 2019–2025 Brian Downing
