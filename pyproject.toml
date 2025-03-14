@@ -26,7 +26,6 @@ dev = [
     "SQLAlchemy",
     "asyncpg",
     "bump2version",
-    "grip",
     "ipython",
     "mypy",
     "pytest",
