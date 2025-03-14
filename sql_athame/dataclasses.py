@@ -354,7 +354,17 @@ class ModelBase:
         return query
 
     @classmethod
-    async def select_cursor(
+    async def cursor_from(
+        cls: type[T],
+        connection: Connection,
+        query: Fragment,
+        prefetch: int = 1000,
+    ) -> AsyncGenerator[T, None]:
+        async for row in connection.cursor(*query, prefetch=prefetch):
+            yield cls.from_mapping(row)
+
+    @classmethod
+    def select_cursor(
         cls: type[T],
         connection: Connection,
         order_by: Union[FieldNames, str] = (),
@@ -362,11 +372,19 @@ class ModelBase:
         where: Where = (),
         prefetch: int = 1000,
     ) -> AsyncGenerator[T, None]:
-        async for row in connection.cursor(
-            *cls.select_sql(order_by=order_by, for_update=for_update, where=where),
+        return cls.cursor_from(
+            connection,
+            cls.select_sql(order_by=order_by, for_update=for_update, where=where),
             prefetch=prefetch,
-        ):
-            yield cls.from_mapping(row)
+        )
+
+    @classmethod
+    async def fetch_from(
+        cls: type[T],
+        connection_or_pool: Union[Connection, Pool],
+        query: Fragment,
+    ) -> list[T]:
+        return [cls.from_mapping(row) for row in await connection_or_pool.fetch(*query)]
 
     @classmethod
     async def select(
@@ -376,12 +394,10 @@ class ModelBase:
         for_update: bool = False,
         where: Where = (),
     ) -> list[T]:
-        return [
-            cls.from_mapping(row)
-            for row in await connection_or_pool.fetch(
-                *cls.select_sql(order_by=order_by, for_update=for_update, where=where)
-            )
-        ]
+        return await cls.fetch_from(
+            connection_or_pool,
+            cls.select_sql(order_by=order_by, for_update=for_update, where=where),
+        )
 
     @classmethod
     def create_sql(cls: type[T], **kwargs: Any) -> Fragment:
