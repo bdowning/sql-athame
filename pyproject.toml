@@ -62,7 +62,6 @@ ignore = [
     "E501",    # line too long
     "E721",    # type checks, currently broken
     "ISC001",  # conflicts with ruff format
-    "PT004",   # Fixture `...` does not return anything, add leading underscore
     "RET505",  # Unnecessary `else` after `return` statement
     "RET506",  # Unnecessary `else` after `raise` statement
 ]
