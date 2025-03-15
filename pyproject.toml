@@ -65,8 +65,6 @@ select = [
 flake8-comprehensions.allow-dict-calls-with-keyword-arguments = true
 ignore = [
     "E501",    # line too long
-    "E721",    # type checks, currently broken
-    "ISC001",  # conflicts with ruff format
     "RET505",  # Unnecessary `else` after `return` statement
     "RET506",  # Unnecessary `else` after `raise` statement
 ]
