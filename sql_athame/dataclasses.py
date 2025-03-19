@@ -230,8 +230,21 @@ class ModelBase:
 
     @classmethod
     def field_names_sql(
-        cls, *, prefix: Optional[str] = None, exclude: FieldNamesSet = ()
+        cls,
+        *,
+        prefix: Optional[str] = None,
+        exclude: FieldNamesSet = (),
+        as_prepended: Optional[str] = None,
     ) -> list[Fragment]:
+        if as_prepended:
+            return [
+                sql(
+                    "{} AS {}",
+                    sql.identifier(f, prefix=prefix),
+                    sql.identifier(f"{as_prepended}{f}"),
+                )
+                for f in cls.field_names(exclude=exclude)
+            ]
         return [
             sql.identifier(f, prefix=prefix) for f in cls.field_names(exclude=exclude)
         ]

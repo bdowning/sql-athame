@@ -71,6 +71,14 @@ def test_modelclass():
         sql(",").join(t.field_values_sql()),
     ).query() == ('INSERT INTO table ("foo","bar") VALUES ($1,$2)', [42, "hi"])
 
+    assert list(
+        sql(
+            "SELECT {fields} FROM {tbl}",
+            fields=sql.list(Test.field_names_sql(as_prepended="p_")),
+            tbl=Test.table_name_sql(),
+        )
+    ) == ['SELECT "foo" AS "p_foo", "bar" AS "p_bar" FROM "table"']
+
 
 def test_modelclass_implicit_types():
     @dataclass
