@@ -210,3 +210,7 @@ def test_serde():
     assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
     # make sure the monkey patching didn't screw things up
     assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
+
+    assert Test.from_prepended_mapping(
+        {"p_foo": "FOO", "p_bar": "BAR", "foo": "not foo", "other": "other"}, "p_"
+    ) == Test("foo", "BAR")

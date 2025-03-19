@@ -314,6 +314,16 @@ class ModelBase:
         return from_mapping_fn(mapping)
 
     @classmethod
+    def from_prepended_mapping(
+        cls: type[T], mapping: Mapping[str, Any], prepend: str
+    ) -> T:
+        filtered_dict: dict[str, Any] = {}
+        for k, v in mapping.items():
+            if k.startswith(prepend):
+                filtered_dict[k[len(prepend) :]] = v
+        return cls.from_mapping(filtered_dict)
+
+    @classmethod
     def ensure_model(cls: type[T], row: Union[T, Mapping[str, Any]]) -> T:
         if isinstance(row, cls):
             return row
