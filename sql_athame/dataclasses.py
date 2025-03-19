@@ -230,8 +230,21 @@ class ModelBase:
 
     @classmethod
     def field_names_sql(
-        cls, *, prefix: Optional[str] = None, exclude: FieldNamesSet = ()
+        cls,
+        *,
+        prefix: Optional[str] = None,
+        exclude: FieldNamesSet = (),
+        as_prepended: Optional[str] = None,
     ) -> list[Fragment]:
+        if as_prepended:
+            return [
+                sql(
+                    "{} AS {}",
+                    sql.identifier(f, prefix=prefix),
+                    sql.identifier(f"{as_prepended}{f}"),
+                )
+                for f in cls.field_names(exclude=exclude)
+            ]
         return [
             sql.identifier(f, prefix=prefix) for f in cls.field_names(exclude=exclude)
         ]
@@ -299,6 +312,16 @@ class ModelBase:
         from_mapping_fn = cls._get_from_mapping_fn()
         cls.from_mapping = from_mapping_fn  # type: ignore
         return from_mapping_fn(mapping)
+
+    @classmethod
+    def from_prepended_mapping(
+        cls: type[T], mapping: Mapping[str, Any], prepend: str
+    ) -> T:
+        filtered_dict: dict[str, Any] = {}
+        for k, v in mapping.items():
+            if k.startswith(prepend):
+                filtered_dict[k[len(prepend) :]] = v
+        return cls.from_mapping(filtered_dict)
 
     @classmethod
     def ensure_model(cls: type[T], row: Union[T, Mapping[str, Any]]) -> T:

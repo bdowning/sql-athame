@@ -71,6 +71,14 @@ def test_modelclass():
         sql(",").join(t.field_values_sql()),
     ).query() == ('INSERT INTO table ("foo","bar") VALUES ($1,$2)', [42, "hi"])
 
+    assert list(
+        sql(
+            "SELECT {fields} FROM {tbl}",
+            fields=sql.list(Test.field_names_sql(as_prepended="p_")),
+            tbl=Test.table_name_sql(),
+        )
+    ) == ['SELECT "foo" AS "p_foo", "bar" AS "p_bar" FROM "table"']
+
 
 def test_modelclass_implicit_types():
     @dataclass
@@ -202,3 +210,7 @@ def test_serde():
     assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
     # make sure the monkey patching didn't screw things up
     assert Test.from_mapping({"foo": "FOO", "bar": "BAR"}) == Test("foo", "BAR")
+
+    assert Test.from_prepended_mapping(
+        {"p_foo": "FOO", "p_bar": "BAR", "foo": "not foo", "other": "other"}, "p_"
+    ) == Test("foo", "BAR")
