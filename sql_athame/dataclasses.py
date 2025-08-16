@@ -956,8 +956,9 @@ class ModelBase:
     def insert_multiple_array_safe_sql(cls: type[T], rows: Iterable[T]) -> Fragment:
         """Generate bulk INSERT SQL using VALUES syntax.
 
-        This method is safer for very large datasets as it doesn't create
-        large arrays that might exceed PostgreSQL limits.
+        This method is required when your model contains array columns, because
+        PostgreSQL doesn't support arrays-of-arrays (which UNNEST would require).
+        Use this instead of the UNNEST method when you have array-typed fields.
 
         Args:
             rows: Model instances to insert
@@ -1046,7 +1047,9 @@ class ModelBase:
     ) -> str:
         """Insert multiple records using VALUES syntax with chunking.
 
-        This method chunks large datasets to avoid PostgreSQL array size limits.
+        This method is required when your model contains array columns, because
+        PostgreSQL doesn't support arrays-of-arrays (which UNNEST would require).
+        Data is processed in chunks to manage memory usage.
 
         Args:
             connection_or_pool: Database connection or pool
@@ -1078,7 +1081,7 @@ class ModelBase:
         Note:
             The actual method used depends on the insert_multiple_mode setting:
             - 'unnest': Most efficient, uses UNNEST (default)
-            - 'array_safe': Uses VALUES with chunking for large datasets
+            - 'array_safe': Uses VALUES syntax; required when model has array columns
             - 'executemany': Uses asyncpg's executemany, slowest but most compatible
         """
         if cls.insert_multiple_mode == "executemany":
@@ -1139,6 +1142,9 @@ class ModelBase:
         insert_only: FieldNamesSet = (),
     ) -> str:
         """Bulk upsert using VALUES syntax with chunking.
+
+        This method is required when your model contains array columns, because
+        PostgreSQL doesn't support arrays-of-arrays (which UNNEST would require).
 
         Args:
             connection_or_pool: Database connection or pool
