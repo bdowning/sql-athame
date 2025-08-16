@@ -319,9 +319,9 @@ Requires SQLAlchemy to be installed, otherwise raises `ImportError`.
 from dataclasses import dataclass, field
 from datetime import date
 from uuid import UUID, uuid4
-from typing import Optional
+from typing import Annotated, Optional
 
-from sql_athame import ModelBase, model_field_metadata as MD, sql
+from sql_athame import ModelBase, ColumnInfo, sql
 
 
 @dataclass
@@ -330,7 +330,7 @@ class Person(ModelBase, table_name="people", primary_key="id"):
     name: str
     birthday: date
     title: Optional[str] = None
-    extra: Optional[dict] = field(default=None, metadata=MD(type="JSONB"))
+    extra: Optional[Annotated[dict, ColumnInfo(type="JSONB")]] = None
 
 
 >>> list(Person.create_table_sql())
