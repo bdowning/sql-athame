@@ -166,6 +166,37 @@ def test_upsert():
     ]
 
 
+def test_upsert_insert_only():
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int
+        foo: int
+        bar: str
+        created_at: str
+
+    t = Test(1, 42, "str", "2023-01-01")
+
+    # Test with insert_only parameter - created_at should be excluded from UPDATE
+    assert list(t.upsert_sql(t.insert_sql(), exclude={"created_at"})) == [
+        'INSERT INTO "table" ("id", "foo", "bar", "created_at") VALUES ($1, $2, $3, $4) '
+        'ON CONFLICT ("id") DO UPDATE SET "foo"=EXCLUDED."foo", "bar"=EXCLUDED."bar"',
+        1,
+        42,
+        "str",
+        "2023-01-01",
+    ]
+
+    # Test with both exclude and insert_only-style exclude
+    assert list(t.upsert_sql(t.insert_sql(), exclude={"bar", "created_at"})) == [
+        'INSERT INTO "table" ("id", "foo", "bar", "created_at") VALUES ($1, $2, $3, $4) '
+        'ON CONFLICT ("id") DO UPDATE SET "foo"=EXCLUDED."foo"',
+        1,
+        42,
+        "str",
+        "2023-01-01",
+    ]
+
+
 def test_serial():
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):

@@ -855,20 +855,31 @@ class ModelBase:
         return Fragment([insert_sql, cached])
 
     async def upsert(
-        self, connection_or_pool: Union[Connection, Pool], exclude: FieldNamesSet = ()
+        self,
+        connection_or_pool: Union[Connection, Pool],
+        exclude: FieldNamesSet = (),
+        insert_only: FieldNamesSet = (),
     ) -> bool:
         """Insert or update this instance in the database.
 
         Args:
             connection_or_pool: Database connection or pool
             exclude: Field names to exclude from the UPDATE clause
+            insert_only: Field names that should only be set on INSERT, not UPDATE
 
         Returns:
             True if the record was updated, False if it was inserted
+
+        Example:
+            >>> user = User(id=1, name="Alice", created_at=datetime.now())
+            >>> # Only set created_at on INSERT, not UPDATE
+            >>> was_updated = await user.upsert(pool, insert_only={'created_at'})
         """
+        # Combine exclude and insert_only for the UPDATE clause
+        update_exclude = set(exclude) | set(insert_only)
         query = sql(
             "{} RETURNING xmax",
-            self.upsert_sql(self.insert_sql(exclude=exclude), exclude=exclude),
+            self.upsert_sql(self.insert_sql(exclude=exclude), exclude=update_exclude),
         )
         result = await connection_or_pool.fetchrow(*query)
         return result["xmax"] != 0

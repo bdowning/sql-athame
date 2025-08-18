@@ -321,3 +321,44 @@ async def test_unnest_empty(conn):
     await Test.insert_multiple(conn, [])
 
     assert list(await Test.select(conn)) == []
+
+
+async def test_upsert_insert_only(conn):
+    @dataclass
+    class Test(ModelBase, table_name="test_upsert", primary_key="id"):
+        id: int
+        name: str
+        count: int
+        created_at: str
+
+    await conn.execute(*Test.create_table_sql())
+
+    # Initial insert
+    record = Test(1, "Alice", 5, "2023-01-01")
+    was_updated = await record.upsert(conn)
+    assert not was_updated  # Should be False for initial insert
+
+    # Verify record was inserted
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert len(result) == 1
+    assert result[0] == record
+
+    # Update without insert_only - should update all fields including created_at
+    updated_record = Test(1, "Alice Updated", 10, "2023-01-02")
+    was_updated = await updated_record.upsert(conn)
+    assert was_updated  # Should be True for update
+
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert len(result) == 1
+    assert result[0] == updated_record
+
+    # Update with insert_only - should not update created_at
+    final_record = Test(1, "Alice Final", 15, "2023-01-03")
+    was_updated = await final_record.upsert(conn, insert_only={"created_at"})
+    assert was_updated  # Should be True for update
+
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert len(result) == 1
+    # created_at should still be the old value, other fields should be updated
+    expected = Test(1, "Alice Final", 15, "2023-01-02")  # created_at unchanged
+    assert result[0] == expected
