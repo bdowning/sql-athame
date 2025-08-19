@@ -132,6 +132,27 @@ async def test_replace_multiple_ignore_insert_only(conn):
     assert db.created == orig.created
     assert db.updated == new.updated
 
+    # Test force_update - should override insert_only and update created field
+    await asyncio.sleep(0.1)
+    force_data = [Test(1, 10), Test(2, 40), Test(3, 20)]
+    c, u, d = await Test.replace_multiple(
+        conn,
+        force_data,
+        where=[],
+        ignore=["updated"],
+        insert_only=["created"],
+        force_update={"created"},
+    )
+    assert not c
+    assert not d
+    # All 3 records should be updated since we're forcing created to update
+    assert len(u) == 3
+
+    # Verify created field was updated despite insert_only
+    final_data = await Test.select(conn, order_by="id")
+    assert final_data[0].created != data[0].created  # Should be updated
+    assert final_data[0].a == 10
+
 
 @pytest.mark.parametrize("insert_multiple_mode", ["array_safe", "executemany"])
 async def test_replace_multiple_arrays(conn, insert_multiple_mode):
@@ -357,8 +378,21 @@ async def test_upsert_insert_only(conn):
     was_updated = await final_record.upsert(conn, insert_only={"created_at"})
     assert was_updated  # Should be True for update
 
+    # Verify created_at was preserved
     result = await Test.select(conn, where=sql("id = {}", 1))
-    assert len(result) == 1
-    # created_at should still be the old value, other fields should be updated
-    expected = Test(1, "Alice Final", 15, "2023-01-02")  # created_at unchanged
-    assert result[0] == expected
+    assert result[0].created_at == "2023-01-02"  # Should still be the previous value
+    assert result[0].name == "Alice Final"
+    assert result[0].count == 15
+
+    # Test force_update - should override insert_only and update created_at
+    force_record = Test(1, "Alice Force", 20, "2023-01-04")
+    was_updated = await force_record.upsert(
+        conn, insert_only={"created_at"}, force_update={"created_at"}
+    )
+    assert was_updated
+
+    # Verify created_at was updated despite insert_only
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert result[0].created_at == "2023-01-04"  # Should be updated
+    assert result[0].name == "Alice Force"
+    assert result[0].count == 20

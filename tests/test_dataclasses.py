@@ -261,12 +261,12 @@ def test_insert_only_column_info():
     insert_only_fields = Test.insert_only_field_names()
     assert insert_only_fields == {"created_at"}
 
-    # Test that upsert SQL excludes insert_only fields from UPDATE when explicitly passed
+    # Test that upsert SQL automatically excludes insert_only fields from UPDATE
     test_instance = Test(1, "Alice", "2023-01-01", "2023-01-02")
     insert_sql = test_instance.insert_sql()
 
-    # Pass the insert_only fields to upsert_sql to exclude them from UPDATE
-    upsert_sql = Test.upsert_sql(insert_sql, exclude=Test.insert_only_field_names())
+    # upsert_sql should automatically handle insert_only fields
+    upsert_sql = Test.upsert_sql(insert_sql)
 
     # The upsert should include created_at in INSERT but exclude it from UPDATE
     upsert_query = upsert_sql.query()[0]
@@ -318,16 +318,14 @@ def test_insert_only_merge_with_manual():
     # Verify auto-detected fields
     assert Test.insert_only_field_names() == {"created_at"}
 
-    # Test combining auto-detected with manual insert_only
+    # Test combining auto-detected with manual exclude
     test_instance = Test(1, "Alice", "2023-01-01", "2023-01-02", 1)
 
-    # Simulate what happens in upsert methods - combine auto and manual
-    auto_insert_only = Test.insert_only_field_names()
-    manual_insert_only = {"version"}
-    all_insert_only = auto_insert_only | manual_insert_only
+    # Manual exclude fields should combine with automatic insert_only fields
+    manual_exclude = {"version"}
 
     insert_sql = test_instance.insert_sql()
-    upsert_sql = Test.upsert_sql(insert_sql, exclude=all_insert_only)
+    upsert_sql = Test.upsert_sql(insert_sql, exclude=manual_exclude)
     upsert_query = upsert_sql.query()[0]
 
     # Both created_at (auto) and version (manual) should be excluded from UPDATE
@@ -362,3 +360,83 @@ def test_column_info_merge_insert_only():
     none_info = ColumnInfo(type="BIGINT")
     merged4 = ColumnInfo.merge(none_info, insert_only_info)
     assert merged4.insert_only is True
+
+
+def test_upsert_sql_honors_insert_only_automatically():
+    """Test that upsert_sql automatically excludes fields marked with ColumnInfo(insert_only=True)."""
+
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int
+        name: str
+        created_at: Annotated[str, ColumnInfo(insert_only=True)]
+        updated_at: str
+
+    test_instance = Test(1, "Alice", "2023-01-01", "2023-01-02")
+    insert_sql = test_instance.insert_sql()
+
+    # Call upsert_sql WITHOUT manually passing insert_only fields
+    upsert_sql = Test.upsert_sql(insert_sql)
+    upsert_query = upsert_sql.query()[0]
+
+    # The upsert should include created_at in INSERT but exclude it from UPDATE
+    assert "created_at" in upsert_query  # Should be in INSERT part
+    # The UPDATE SET clause should only include name and updated_at
+    assert '"name"=EXCLUDED."name"' in upsert_query
+    assert '"updated_at"=EXCLUDED."updated_at"' in upsert_query
+    assert '"created_at"=EXCLUDED."created_at"' not in upsert_query
+
+    # Test that manual exclude still works in combination
+    upsert_sql_with_exclude = Test.upsert_sql(insert_sql, exclude={"updated_at"})
+    upsert_query_with_exclude = upsert_sql_with_exclude.query()[0]
+
+    # Now both created_at (auto) and updated_at (manual) should be excluded from UPDATE
+    assert '"name"=EXCLUDED."name"' in upsert_query_with_exclude
+    assert '"updated_at"=EXCLUDED."updated_at"' not in upsert_query_with_exclude
+    assert '"created_at"=EXCLUDED."created_at"' not in upsert_query_with_exclude
+
+
+def test_force_update_functionality():
+    """Test that force_update parameter overrides insert_only settings."""
+
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int
+        name: str
+        created_at: Annotated[str, ColumnInfo(insert_only=True)]
+        updated_at: str
+
+    test_instance = Test(1, "Alice", "2023-01-01", "2023-01-02")
+    insert_sql = test_instance.insert_sql()
+
+    # Test normal behavior - created_at should be excluded from UPDATE
+    normal_upsert = Test.upsert_sql(insert_sql)
+    normal_query = normal_upsert.query()[0]
+    assert '"name"=EXCLUDED."name"' in normal_query
+    assert '"updated_at"=EXCLUDED."updated_at"' in normal_query
+    assert '"created_at"=EXCLUDED."created_at"' not in normal_query
+
+    # Test force_update - created_at should be included in UPDATE despite insert_only=True
+    force_upsert = Test.upsert_sql(insert_sql, force_update={"created_at"})
+    force_query = force_upsert.query()[0]
+    assert '"name"=EXCLUDED."name"' in force_query
+    assert '"updated_at"=EXCLUDED."updated_at"' in force_query
+    assert '"created_at"=EXCLUDED."created_at"' in force_query
+
+    # Test force_update with manual insert_only
+    manual_upsert = Test.upsert_sql(
+        insert_sql, exclude={"updated_at"}, force_update={"created_at"}
+    )
+    manual_query = manual_upsert.query()[0]
+    assert '"name"=EXCLUDED."name"' in manual_query
+    assert '"updated_at"=EXCLUDED."updated_at"' not in manual_query  # Excluded manually
+    assert '"created_at"=EXCLUDED."created_at"' in manual_query  # Force updated
+
+    # Test partial force_update - only override specific fields
+    partial_upsert = Test.upsert_sql(
+        insert_sql, exclude={"name"}, force_update={"created_at"}
+    )
+    partial_query = partial_upsert.query()[0]
+    assert '"name"=EXCLUDED."name"' not in partial_query  # Excluded manually
+    assert '"updated_at"=EXCLUDED."updated_at"' in partial_query
+    assert '"created_at"=EXCLUDED."created_at"' in partial_query  # Force updated

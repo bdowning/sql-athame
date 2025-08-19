@@ -844,12 +844,18 @@ class ModelBase:
         return await connection_or_pool.execute(*self.insert_sql(exclude))
 
     @classmethod
-    def upsert_sql(cls, insert_sql: Fragment, exclude: FieldNamesSet = ()) -> Fragment:
+    def upsert_sql(
+        cls,
+        insert_sql: Fragment,
+        exclude: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
+    ) -> Fragment:
         """Generate UPSERT (INSERT ... ON CONFLICT DO UPDATE) SQL.
 
         Args:
             insert_sql: Base INSERT statement Fragment
             exclude: Field names to exclude from the UPDATE clause
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             Fragment containing INSERT ... ON CONFLICT DO UPDATE statement
@@ -858,9 +864,19 @@ class ModelBase:
             >>> insert = user.insert_sql()
             >>> list(User.upsert_sql(insert))
             ['INSERT INTO "users" ("name", "email") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name"=EXCLUDED."name", "email"=EXCLUDED."email"', 'Alice', 'alice@example.com']
+
+        Note:
+            Fields marked with ColumnInfo(insert_only=True) are automatically
+            excluded from the UPDATE clause, unless overridden by force_update.
         """
+        # Combine exclude parameter with auto-detected insert_only fields, but remove force_update fields
+        auto_insert_only = cls.insert_only_field_names() - set(force_update)
+        manual_exclude = set(exclude) - set(
+            force_update
+        )  # Remove force_update from manual excludes too
+        all_exclude = manual_exclude | auto_insert_only
         cached = cls._cached(
-            ("upsert_sql", tuple(sorted(exclude))),
+            ("upsert_sql", tuple(sorted(all_exclude))),
             lambda: sql(
                 " ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
                 insert_sql=insert_sql,
@@ -868,7 +884,7 @@ class ModelBase:
                 assignments=sql.list(
                     sql("{field}=EXCLUDED.{field}", field=x)
                     for x in cls.field_names_sql(
-                        exclude=(*cls.primary_key_names, *exclude)
+                        exclude=(*cls.primary_key_names, *all_exclude)
                     )
                 ),
             ).flatten(),
@@ -880,6 +896,7 @@ class ModelBase:
         connection_or_pool: Union[Connection, Pool],
         exclude: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> bool:
         """Insert or update this instance in the database.
 
@@ -887,6 +904,7 @@ class ModelBase:
             connection_or_pool: Database connection or pool
             exclude: Field names to exclude from the UPDATE clause
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             True if the record was updated, False if it was inserted
@@ -895,18 +913,24 @@ class ModelBase:
             >>> user = User(id=1, name="Alice", created_at=datetime.now())
             >>> # Only set created_at on INSERT, not UPDATE
             >>> was_updated = await user.upsert(pool, insert_only={'created_at'})
+            >>> # Force update created_at even if it's marked insert_only in ColumnInfo
+            >>> was_updated = await user.upsert(pool, force_update={'created_at'})
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
-            treated as insert-only and combined with the insert_only parameter.
+            treated as insert-only and combined with the insert_only parameter,
+            unless overridden by force_update.
         """
-        # Combine auto-detected insert_only fields with manual ones
-        all_insert_only = self.insert_only_field_names() | set(insert_only)
-        # Combine exclude and insert_only for the UPDATE clause
-        update_exclude = set(exclude) | all_insert_only
+        # upsert_sql automatically handles insert_only fields from ColumnInfo
+        # We only need to combine manual insert_only with exclude for the UPDATE clause
+        update_exclude = set(exclude) | set(insert_only)
         query = sql(
             "{} RETURNING xmax",
-            self.upsert_sql(self.insert_sql(exclude=exclude), exclude=update_exclude),
+            self.upsert_sql(
+                self.insert_sql(exclude=exclude),
+                exclude=update_exclude,
+                force_update=force_update,
+            ),
         )
         result = await connection_or_pool.fetchrow(*query)
         return result["xmax"] != 0
@@ -1136,6 +1160,7 @@ class ModelBase:
         connection_or_pool: Union[Connection, Pool],
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> None:
         """Bulk upsert using asyncpg's executemany.
 
@@ -1143,10 +1168,13 @@ class ModelBase:
             connection_or_pool: Database connection or pool
             rows: Model instances to upsert
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
         """
         args = [r.field_values() for r in rows]
         query = cls.upsert_sql(
-            cls.insert_multiple_executemany_chunk_sql(1), exclude=insert_only
+            cls.insert_multiple_executemany_chunk_sql(1),
+            exclude=insert_only,
+            force_update=force_update,
         ).query()[0]
         if args:
             await connection_or_pool.executemany(query, args)
@@ -1157,6 +1185,7 @@ class ModelBase:
         connection_or_pool: Union[Connection, Pool],
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> str:
         """Bulk upsert using PostgreSQL UNNEST.
 
@@ -1164,12 +1193,17 @@ class ModelBase:
             connection_or_pool: Database connection or pool
             rows: Model instances to upsert
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             Result string from the database operation
         """
         return await connection_or_pool.execute(
-            *cls.upsert_sql(cls.insert_multiple_sql(rows), exclude=insert_only)
+            *cls.upsert_sql(
+                cls.insert_multiple_sql(rows),
+                exclude=insert_only,
+                force_update=force_update,
+            )
         )
 
     @classmethod
@@ -1178,6 +1212,7 @@ class ModelBase:
         connection_or_pool: Union[Connection, Pool],
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> str:
         """Bulk upsert using VALUES syntax with chunking.
 
@@ -1188,6 +1223,7 @@ class ModelBase:
             connection_or_pool: Database connection or pool
             rows: Model instances to upsert
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             Result string from the last chunk operation
@@ -1196,7 +1232,9 @@ class ModelBase:
         for chunk in chunked(rows, 100):
             last = await connection_or_pool.execute(
                 *cls.upsert_sql(
-                    cls.insert_multiple_array_safe_sql(chunk), exclude=insert_only
+                    cls.insert_multiple_array_safe_sql(chunk),
+                    exclude=insert_only,
+                    force_update=force_update,
                 )
             )
         return last
@@ -1207,6 +1245,7 @@ class ModelBase:
         connection_or_pool: Union[Connection, Pool],
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> str:
         """Bulk upsert (INSERT ... ON CONFLICT DO UPDATE) multiple records.
 
@@ -1214,32 +1253,44 @@ class ModelBase:
             connection_or_pool: Database connection or pool
             rows: Model instances to upsert
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             Result string from the database operation
 
         Example:
             >>> await User.upsert_multiple(pool, users, insert_only={'created_at'})
+            >>> await User.upsert_multiple(pool, users, force_update={'created_at'})
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
-            treated as insert-only and combined with the insert_only parameter.
+            treated as insert-only and combined with the insert_only parameter,
+            unless overridden by force_update.
         """
-        # Combine auto-detected insert_only fields with manual ones
-        all_insert_only = cls.insert_only_field_names() | set(insert_only)
+        # upsert_sql automatically handles insert_only fields from ColumnInfo
+        # Pass manual insert_only parameter through to the specific implementations
 
         if cls.insert_multiple_mode == "executemany":
             await cls.upsert_multiple_executemany(
-                connection_or_pool, rows, insert_only=all_insert_only
+                connection_or_pool,
+                rows,
+                insert_only=insert_only,
+                force_update=force_update,
             )
             return "INSERT"
         elif cls.insert_multiple_mode == "array_safe":
             return await cls.upsert_multiple_array_safe(
-                connection_or_pool, rows, insert_only=all_insert_only
+                connection_or_pool,
+                rows,
+                insert_only=insert_only,
+                force_update=force_update,
             )
         else:
             return await cls.upsert_multiple_unnest(
-                connection_or_pool, rows, insert_only=all_insert_only
+                connection_or_pool,
+                rows,
+                insert_only=insert_only,
+                force_update=force_update,
             )
 
     @classmethod
@@ -1272,6 +1323,7 @@ class ModelBase:
         where: Where,
         ignore: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> "ReplaceMultiplePlan[T]":
         """Plan a replace operation by comparing new data with existing records.
 
@@ -1284,6 +1336,7 @@ class ModelBase:
             where: WHERE clause to limit which existing records to consider
             ignore: Field names to ignore when comparing records
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             ReplaceMultiplePlan containing the planned operations
@@ -1296,9 +1349,10 @@ class ModelBase:
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
-            treated as insert-only and combined with the insert_only parameter.
+            treated as insert-only and combined with the insert_only parameter,
+            unless overridden by force_update.
         """
-        # Combine auto-detected insert_only fields with manual ones
+        # For comparison purposes, combine auto-detected insert_only fields with manual ones
         all_insert_only = cls.insert_only_field_names() | set(insert_only)
         ignore = sorted(set(ignore) | all_insert_only)
         equal_ignoring = cls._cached(
@@ -1323,7 +1377,11 @@ class ModelBase:
 
         created = list(pending.values())
 
-        return ReplaceMultiplePlan(cls, all_insert_only, created, updated, deleted)
+        # Pass only manual insert_only and force_update to the plan
+        # since upsert_multiple handles auto-detected ones
+        return ReplaceMultiplePlan(
+            cls, insert_only, force_update, created, updated, deleted
+        )
 
     @classmethod
     async def replace_multiple(
@@ -1334,6 +1392,7 @@ class ModelBase:
         where: Where,
         ignore: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> tuple[list[T], list[T], list[T]]:
         """Replace records in the database with the provided data.
 
@@ -1347,6 +1406,7 @@ class ModelBase:
             where: WHERE clause to limit which existing records to consider for replacement
             ignore: Field names to ignore when comparing records
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             Tuple of (created_records, updated_records, deleted_records)
@@ -1358,10 +1418,16 @@ class ModelBase:
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
-            treated as insert-only and combined with the insert_only parameter.
+            treated as insert-only and combined with the insert_only parameter,
+            unless overridden by force_update.
         """
         plan = await cls.plan_replace_multiple(
-            connection, rows, where=where, ignore=ignore, insert_only=insert_only
+            connection,
+            rows,
+            where=where,
+            ignore=ignore,
+            insert_only=insert_only,
+            force_update=force_update,
         )
         await plan.execute(connection)
         return plan.cud
@@ -1401,6 +1467,7 @@ class ModelBase:
         where: Where,
         ignore: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
+        force_update: FieldNamesSet = (),
     ) -> tuple[list[T], list[tuple[T, T, list[str]]], list[T]]:
         """Replace records and report the specific field differences for updates.
 
@@ -1413,6 +1480,7 @@ class ModelBase:
             where: WHERE clause to limit which existing records to consider
             ignore: Field names to ignore when comparing records
             insert_only: Field names that should only be set on INSERT, not UPDATE
+            force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
             Tuple of (created_records, update_triples, deleted_records)
@@ -1427,9 +1495,10 @@ class ModelBase:
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
-            treated as insert-only and combined with the insert_only parameter.
+            treated as insert-only and combined with the insert_only parameter,
+            unless overridden by force_update.
         """
-        # Combine auto-detected insert_only fields with manual ones
+        # For comparison purposes, combine auto-detected insert_only fields with manual ones
         all_insert_only = cls.insert_only_field_names() | set(insert_only)
         ignore = sorted(set(ignore) | all_insert_only)
         differences_ignoring = cls._cached(
@@ -1460,7 +1529,8 @@ class ModelBase:
             await cls.upsert_multiple(
                 connection,
                 (*created, *(t[1] for t in updated_triples)),
-                insert_only=all_insert_only,
+                insert_only=insert_only,
+                force_update=force_update,
             )
         if deleted:
             await cls.delete_multiple(connection, deleted)
@@ -1472,6 +1542,7 @@ class ModelBase:
 class ReplaceMultiplePlan(Generic[T]):
     model_class: type[T]
     insert_only: FieldNamesSet
+    force_update: FieldNamesSet
     created: list[T]
     updated: list[T]
     deleted: list[T]
@@ -1493,7 +1564,10 @@ class ReplaceMultiplePlan(Generic[T]):
         """
         if self.created or self.updated:
             await self.model_class.upsert_multiple(
-                connection, (*self.created, *self.updated), insert_only=self.insert_only
+                connection,
+                (*self.created, *self.updated),
+                insert_only=self.insert_only,
+                force_update=self.force_update,
             )
 
     async def execute_deletes(self, connection: Connection) -> None:
