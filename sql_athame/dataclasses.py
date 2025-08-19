@@ -45,6 +45,7 @@ class ColumnInfo:
         constraints: Additional SQL constraints (e.g., 'UNIQUE', 'CHECK (value > 0)')
         serialize: Function to transform Python values before database storage
         deserialize: Function to transform database values back to Python objects
+        insert_only: Whether this field should only be set on INSERT, not UPDATE in upsert operations
 
     Example:
         >>> from dataclasses import dataclass
@@ -58,6 +59,7 @@ class ColumnInfo:
         ...     name: str
         ...     price: Annotated[float, ColumnInfo(constraints="CHECK (price > 0)")]
         ...     tags: Annotated[list, ColumnInfo(type="JSONB", serialize=json.dumps, deserialize=json.loads)]
+        ...     created_at: Annotated[datetime, ColumnInfo(insert_only=True)]
     """
 
     type: Optional[str] = None
@@ -69,6 +71,7 @@ class ColumnInfo:
 
     serialize: Optional[Callable[[Any], Any]] = None
     deserialize: Optional[Callable[[Any], Any]] = None
+    insert_only: Optional[bool] = None
 
     def __post_init__(self, constraints: Union[str, Iterable[str], None]) -> None:
         if constraints is not None:
@@ -94,6 +97,7 @@ class ColumnInfo:
             _constraints=(*a._constraints, *b._constraints),
             serialize=b.serialize if b.serialize is not None else a.serialize,
             deserialize=b.deserialize if b.deserialize is not None else a.deserialize,
+            insert_only=b.insert_only if b.insert_only is not None else a.insert_only,
         )
 
 
@@ -113,6 +117,7 @@ class ConcreteColumnInfo:
         constraints: Tuple of SQL constraint strings
         serialize: Optional serialization function
         deserialize: Optional deserialization function
+        insert_only: Whether this field should only be set on INSERT, not UPDATE
     """
 
     field: Field
@@ -123,6 +128,7 @@ class ConcreteColumnInfo:
     constraints: tuple[str, ...]
     serialize: Optional[Callable[[Any], Any]] = None
     deserialize: Optional[Callable[[Any], Any]] = None
+    insert_only: bool = False
 
     @staticmethod
     def from_column_info(
@@ -156,6 +162,7 @@ class ConcreteColumnInfo:
             constraints=info._constraints,
             serialize=info.serialize,
             deserialize=info.deserialize,
+            insert_only=bool(info.insert_only),
         )
 
     def create_table_string(self) -> str:
@@ -364,6 +371,20 @@ class ModelBase:
             for ci in cls.column_info().values()
             if ci.field.name not in exclude
         ]
+
+    @classmethod
+    def insert_only_field_names(cls) -> set[str]:
+        """Get set of field names marked as insert_only in ColumnInfo.
+
+        Returns:
+            Set of field names that should only be set on INSERT, not UPDATE
+        """
+        return cls._cached(
+            ("insert_only_field_names",),
+            lambda: {
+                ci.field.name for ci in cls.column_info().values() if ci.insert_only
+            },
+        )
 
     @classmethod
     def field_names_sql(
@@ -874,9 +895,15 @@ class ModelBase:
             >>> user = User(id=1, name="Alice", created_at=datetime.now())
             >>> # Only set created_at on INSERT, not UPDATE
             >>> was_updated = await user.upsert(pool, insert_only={'created_at'})
+
+        Note:
+            Fields marked with ColumnInfo(insert_only=True) are automatically
+            treated as insert-only and combined with the insert_only parameter.
         """
+        # Combine auto-detected insert_only fields with manual ones
+        all_insert_only = self.insert_only_field_names() | set(insert_only)
         # Combine exclude and insert_only for the UPDATE clause
-        update_exclude = set(exclude) | set(insert_only)
+        update_exclude = set(exclude) | all_insert_only
         query = sql(
             "{} RETURNING xmax",
             self.upsert_sql(self.insert_sql(exclude=exclude), exclude=update_exclude),
@@ -1193,19 +1220,26 @@ class ModelBase:
 
         Example:
             >>> await User.upsert_multiple(pool, users, insert_only={'created_at'})
+
+        Note:
+            Fields marked with ColumnInfo(insert_only=True) are automatically
+            treated as insert-only and combined with the insert_only parameter.
         """
+        # Combine auto-detected insert_only fields with manual ones
+        all_insert_only = cls.insert_only_field_names() | set(insert_only)
+
         if cls.insert_multiple_mode == "executemany":
             await cls.upsert_multiple_executemany(
-                connection_or_pool, rows, insert_only=insert_only
+                connection_or_pool, rows, insert_only=all_insert_only
             )
             return "INSERT"
         elif cls.insert_multiple_mode == "array_safe":
             return await cls.upsert_multiple_array_safe(
-                connection_or_pool, rows, insert_only=insert_only
+                connection_or_pool, rows, insert_only=all_insert_only
             )
         else:
             return await cls.upsert_multiple_unnest(
-                connection_or_pool, rows, insert_only=insert_only
+                connection_or_pool, rows, insert_only=all_insert_only
             )
 
     @classmethod
@@ -1259,8 +1293,14 @@ class ModelBase:
             ...     conn, new_users, where=sql("department_id = {}", dept_id)
             ... )
             >>> print(f"Will create {len(plan.created)}, update {len(plan.updated)}, delete {len(plan.deleted)}")
+
+        Note:
+            Fields marked with ColumnInfo(insert_only=True) are automatically
+            treated as insert-only and combined with the insert_only parameter.
         """
-        ignore = sorted(set(ignore) | set(insert_only))
+        # Combine auto-detected insert_only fields with manual ones
+        all_insert_only = cls.insert_only_field_names() | set(insert_only)
+        ignore = sorted(set(ignore) | all_insert_only)
         equal_ignoring = cls._cached(
             ("equal_ignoring", tuple(ignore)),
             lambda: cls._get_equal_ignoring_fn(ignore),
@@ -1283,7 +1323,7 @@ class ModelBase:
 
         created = list(pending.values())
 
-        return ReplaceMultiplePlan(cls, insert_only, created, updated, deleted)
+        return ReplaceMultiplePlan(cls, all_insert_only, created, updated, deleted)
 
     @classmethod
     async def replace_multiple(
@@ -1315,6 +1355,10 @@ class ModelBase:
             >>> created, updated, deleted = await User.replace_multiple(
             ...     conn, new_users, where=sql("department_id = {}", dept_id)
             ... )
+
+        Note:
+            Fields marked with ColumnInfo(insert_only=True) are automatically
+            treated as insert-only and combined with the insert_only parameter.
         """
         plan = await cls.plan_replace_multiple(
             connection, rows, where=where, ignore=ignore, insert_only=insert_only
@@ -1380,8 +1424,14 @@ class ModelBase:
             ... )
             >>> for old, new, fields in updates:
             ...     print(f"Updated {old.name}: changed {', '.join(fields)}")
+
+        Note:
+            Fields marked with ColumnInfo(insert_only=True) are automatically
+            treated as insert-only and combined with the insert_only parameter.
         """
-        ignore = sorted(set(ignore) | set(insert_only))
+        # Combine auto-detected insert_only fields with manual ones
+        all_insert_only = cls.insert_only_field_names() | set(insert_only)
+        ignore = sorted(set(ignore) | all_insert_only)
         differences_ignoring = cls._cached(
             ("differences_ignoring", tuple(ignore)),
             lambda: cls._get_differences_ignoring_fn(ignore),
@@ -1410,7 +1460,7 @@ class ModelBase:
             await cls.upsert_multiple(
                 connection,
                 (*created, *(t[1] for t in updated_triples)),
-                insert_only=insert_only,
+                insert_only=all_insert_only,
             )
         if deleted:
             await cls.delete_multiple(connection, deleted)

@@ -245,3 +245,120 @@ def test_serde():
     assert Test.from_prepended_mapping(
         {"p_foo": "FOO", "p_bar": "BAR", "foo": "not foo", "other": "other"}, "p_"
     ) == Test("foo", "BAR")
+
+
+def test_insert_only_column_info():
+    """Test that ColumnInfo(insert_only=True) works correctly."""
+
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int
+        name: str
+        created_at: Annotated[str, ColumnInfo(insert_only=True)]
+        updated_at: str
+
+    # Test that insert_only fields are detected
+    insert_only_fields = Test.insert_only_field_names()
+    assert insert_only_fields == {"created_at"}
+
+    # Test that upsert SQL excludes insert_only fields from UPDATE when explicitly passed
+    test_instance = Test(1, "Alice", "2023-01-01", "2023-01-02")
+    insert_sql = test_instance.insert_sql()
+
+    # Pass the insert_only fields to upsert_sql to exclude them from UPDATE
+    upsert_sql = Test.upsert_sql(insert_sql, exclude=Test.insert_only_field_names())
+
+    # The upsert should include created_at in INSERT but exclude it from UPDATE
+    upsert_query = upsert_sql.query()[0]
+    assert "created_at" in upsert_query  # Should be in INSERT part
+    # The UPDATE SET clause should only include name and updated_at
+    assert '"name"=EXCLUDED."name"' in upsert_query
+    assert '"updated_at"=EXCLUDED."updated_at"' in upsert_query
+    assert '"created_at"=EXCLUDED."created_at"' not in upsert_query
+
+
+def test_insert_only_automatic_handling():
+    """Test that the upsert() method automatically handles insert_only fields."""
+
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int
+        name: str
+        created_at: Annotated[str, ColumnInfo(insert_only=True)]
+        updated_at: str
+
+    # Test automatic handling by checking the generated SQL from the upsert method
+    test_instance = Test(1, "Alice", "2023-01-01", "2023-01-02")
+
+    # Get the SQL that would be generated for upsert operation
+    # We simulate what happens inside the upsert method
+    all_insert_only = test_instance.insert_only_field_names()
+    insert_sql = test_instance.insert_sql()
+    upsert_sql = Test.upsert_sql(insert_sql, exclude=all_insert_only)
+
+    upsert_query = upsert_sql.query()[0]
+
+    # created_at should be excluded from UPDATE clause automatically
+    assert '"name"=EXCLUDED."name"' in upsert_query
+    assert '"updated_at"=EXCLUDED."updated_at"' in upsert_query
+    assert '"created_at"=EXCLUDED."created_at"' not in upsert_query
+
+
+def test_insert_only_merge_with_manual():
+    """Test that ColumnInfo insert_only merges with manual insert_only parameter."""
+
+    @dataclass
+    class Test(ModelBase, table_name="table", primary_key="id"):
+        id: int
+        name: str
+        created_at: Annotated[str, ColumnInfo(insert_only=True)]  # Auto insert-only
+        updated_at: str
+        version: int
+
+    # Verify auto-detected fields
+    assert Test.insert_only_field_names() == {"created_at"}
+
+    # Test combining auto-detected with manual insert_only
+    test_instance = Test(1, "Alice", "2023-01-01", "2023-01-02", 1)
+
+    # Simulate what happens in upsert methods - combine auto and manual
+    auto_insert_only = Test.insert_only_field_names()
+    manual_insert_only = {"version"}
+    all_insert_only = auto_insert_only | manual_insert_only
+
+    insert_sql = test_instance.insert_sql()
+    upsert_sql = Test.upsert_sql(insert_sql, exclude=all_insert_only)
+    upsert_query = upsert_sql.query()[0]
+
+    # Both created_at (auto) and version (manual) should be excluded from UPDATE
+    assert '"name"=EXCLUDED."name"' in upsert_query
+    assert '"updated_at"=EXCLUDED."updated_at"' in upsert_query
+    assert '"created_at"=EXCLUDED."created_at"' not in upsert_query
+    assert '"version"=EXCLUDED."version"' not in upsert_query
+
+
+def test_column_info_merge_insert_only():
+    """Test that ColumnInfo.merge handles insert_only properly."""
+
+    base_info = ColumnInfo(type="TEXT")
+    insert_only_info = ColumnInfo(insert_only=True)
+
+    # Test merging - insert_only should be preserved
+    merged = ColumnInfo.merge(base_info, insert_only_info)
+    assert merged.insert_only is True
+    assert merged.type == "TEXT"
+
+    # Test merging the other way
+    merged2 = ColumnInfo.merge(insert_only_info, base_info)
+    assert merged2.insert_only is True  # Should remain True
+    assert merged2.type == "TEXT"
+
+    # Test with both having insert_only set
+    both_false = ColumnInfo(type="INTEGER", insert_only=False)
+    merged3 = ColumnInfo.merge(both_false, insert_only_info)
+    assert merged3.insert_only is True  # True should take precedence
+
+    # Test with None (default)
+    none_info = ColumnInfo(type="BIGINT")
+    merged4 = ColumnInfo.merge(none_info, insert_only_info)
+    assert merged4.insert_only is True
