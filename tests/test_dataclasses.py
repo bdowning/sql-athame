@@ -177,7 +177,7 @@ def test_upsert_insert_only():
     t = Test(1, 42, "str", "2023-01-01")
 
     # Test with insert_only parameter - created_at should be excluded from UPDATE
-    assert list(t.upsert_sql(t.insert_sql(), exclude={"created_at"})) == [
+    assert list(t.upsert_sql(t.insert_sql(), insert_only={"created_at"})) == [
         'INSERT INTO "table" ("id", "foo", "bar", "created_at") VALUES ($1, $2, $3, $4) '
         'ON CONFLICT ("id") DO UPDATE SET "foo"=EXCLUDED."foo", "bar"=EXCLUDED."bar"',
         1,
@@ -187,7 +187,7 @@ def test_upsert_insert_only():
     ]
 
     # Test with both exclude and insert_only-style exclude
-    assert list(t.upsert_sql(t.insert_sql(), exclude={"bar", "created_at"})) == [
+    assert list(t.upsert_sql(t.insert_sql(), insert_only={"bar", "created_at"})) == [
         'INSERT INTO "table" ("id", "foo", "bar", "created_at") VALUES ($1, $2, $3, $4) '
         'ON CONFLICT ("id") DO UPDATE SET "foo"=EXCLUDED."foo"',
         1,
@@ -294,7 +294,7 @@ def test_insert_only_automatic_handling():
     # We simulate what happens inside the upsert method
     all_insert_only = test_instance.insert_only_field_names()
     insert_sql = test_instance.insert_sql()
-    upsert_sql = Test.upsert_sql(insert_sql, exclude=all_insert_only)
+    upsert_sql = Test.upsert_sql(insert_sql, insert_only=all_insert_only)
 
     upsert_query = upsert_sql.query()[0]
 
@@ -325,7 +325,7 @@ def test_insert_only_merge_with_manual():
     manual_exclude = {"version"}
 
     insert_sql = test_instance.insert_sql()
-    upsert_sql = Test.upsert_sql(insert_sql, exclude=manual_exclude)
+    upsert_sql = Test.upsert_sql(insert_sql, insert_only=manual_exclude)
     upsert_query = upsert_sql.query()[0]
 
     # Both created_at (auto) and version (manual) should be excluded from UPDATE
@@ -387,7 +387,7 @@ def test_upsert_sql_honors_insert_only_automatically():
     assert '"created_at"=EXCLUDED."created_at"' not in upsert_query
 
     # Test that manual exclude still works in combination
-    upsert_sql_with_exclude = Test.upsert_sql(insert_sql, exclude={"updated_at"})
+    upsert_sql_with_exclude = Test.upsert_sql(insert_sql, insert_only={"updated_at"})
     upsert_query_with_exclude = upsert_sql_with_exclude.query()[0]
 
     # Now both created_at (auto) and updated_at (manual) should be excluded from UPDATE
@@ -425,7 +425,7 @@ def test_force_update_functionality():
 
     # Test force_update with manual insert_only
     manual_upsert = Test.upsert_sql(
-        insert_sql, exclude={"updated_at"}, force_update={"created_at"}
+        insert_sql, insert_only={"updated_at"}, force_update={"created_at"}
     )
     manual_query = manual_upsert.query()[0]
     assert '"name"=EXCLUDED."name"' in manual_query
@@ -434,7 +434,7 @@ def test_force_update_functionality():
 
     # Test partial force_update - only override specific fields
     partial_upsert = Test.upsert_sql(
-        insert_sql, exclude={"name"}, force_update={"created_at"}
+        insert_sql, insert_only={"name"}, force_update={"created_at"}
     )
     partial_query = partial_upsert.query()[0]
     assert '"name"=EXCLUDED."name"' not in partial_query  # Excluded manually

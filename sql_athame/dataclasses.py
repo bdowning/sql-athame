@@ -847,14 +847,14 @@ class ModelBase:
     def upsert_sql(
         cls,
         insert_sql: Fragment,
-        exclude: FieldNamesSet = (),
+        insert_only: FieldNamesSet = (),
         force_update: FieldNamesSet = (),
     ) -> Fragment:
         """Generate UPSERT (INSERT ... ON CONFLICT DO UPDATE) SQL.
 
         Args:
             insert_sql: Base INSERT statement Fragment
-            exclude: Field names to exclude from the UPDATE clause
+            insert_only: Field names to exclude from the UPDATE clause
             force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
         Returns:
@@ -869,14 +869,14 @@ class ModelBase:
             Fields marked with ColumnInfo(insert_only=True) are automatically
             excluded from the UPDATE clause, unless overridden by force_update.
         """
-        # Combine exclude parameter with auto-detected insert_only fields, but remove force_update fields
+        # Combine insert_only parameter with auto-detected insert_only fields, but remove force_update fields
         auto_insert_only = cls.insert_only_field_names() - set(force_update)
-        manual_exclude = set(exclude) - set(
+        manual_insert_only = set(insert_only) - set(
             force_update
-        )  # Remove force_update from manual excludes too
-        all_exclude = manual_exclude | auto_insert_only
+        )  # Remove force_update from manual insert_only too
+        all_insert_only = manual_insert_only | auto_insert_only
         cached = cls._cached(
-            ("upsert_sql", tuple(sorted(all_exclude))),
+            ("upsert_sql", tuple(sorted(all_insert_only))),
             lambda: sql(
                 " ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
                 insert_sql=insert_sql,
@@ -884,7 +884,7 @@ class ModelBase:
                 assignments=sql.list(
                     sql("{field}=EXCLUDED.{field}", field=x)
                     for x in cls.field_names_sql(
-                        exclude=(*cls.primary_key_names, *all_exclude)
+                        exclude=(*cls.primary_key_names, *all_insert_only)
                     )
                 ),
             ).flatten(),
@@ -928,7 +928,7 @@ class ModelBase:
             "{} RETURNING xmax",
             self.upsert_sql(
                 self.insert_sql(exclude=exclude),
-                exclude=update_exclude,
+                insert_only=update_exclude,
                 force_update=force_update,
             ),
         )
@@ -1173,7 +1173,7 @@ class ModelBase:
         args = [r.field_values() for r in rows]
         query = cls.upsert_sql(
             cls.insert_multiple_executemany_chunk_sql(1),
-            exclude=insert_only,
+            insert_only=insert_only,
             force_update=force_update,
         ).query()[0]
         if args:
@@ -1201,7 +1201,7 @@ class ModelBase:
         return await connection_or_pool.execute(
             *cls.upsert_sql(
                 cls.insert_multiple_sql(rows),
-                exclude=insert_only,
+                insert_only=insert_only,
                 force_update=force_update,
             )
         )
@@ -1233,7 +1233,7 @@ class ModelBase:
             last = await connection_or_pool.execute(
                 *cls.upsert_sql(
                     cls.insert_multiple_array_safe_sql(chunk),
-                    exclude=insert_only,
+                    insert_only=insert_only,
                     force_update=force_update,
                 )
             )
