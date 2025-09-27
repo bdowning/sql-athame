@@ -914,7 +914,7 @@ class ModelBase:
 
         Args:
             connection_or_pool: Database connection or pool
-            exclude: Field names to exclude from the UPDATE clause
+            exclude: Field names to exclude from INSERT and UPDATE
             insert_only: Field names that should only be set on INSERT, not UPDATE
             force_update: Field names to force include in UPDATE clause, overriding insert_only settings
 
