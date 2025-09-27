@@ -132,6 +132,27 @@ async def test_replace_multiple_ignore_insert_only(conn):
     assert db.created == orig.created
     assert db.updated == new.updated
 
+    # Test force_update - should override insert_only and update created field
+    await asyncio.sleep(0.1)
+    force_data = [Test(1, 10), Test(2, 40), Test(3, 20)]
+    c, u, d = await Test.replace_multiple(
+        conn,
+        force_data,
+        where=[],
+        ignore=["updated"],
+        insert_only=["created"],
+        force_update={"created"},
+    )
+    assert not c
+    assert not d
+    # All 3 records should be updated since we're forcing created to update
+    assert len(u) == 3
+
+    # Verify created field was updated despite insert_only
+    final_data = await Test.select(conn, order_by="id")
+    assert final_data[0].created != data[0].created  # Should be updated
+    assert final_data[0].a == 10
+
 
 @pytest.mark.parametrize("insert_multiple_mode", ["array_safe", "executemany"])
 async def test_replace_multiple_arrays(conn, insert_multiple_mode):
@@ -321,3 +342,57 @@ async def test_unnest_empty(conn):
     await Test.insert_multiple(conn, [])
 
     assert list(await Test.select(conn)) == []
+
+
+async def test_upsert_insert_only(conn):
+    @dataclass
+    class Test(ModelBase, table_name="test_upsert", primary_key="id"):
+        id: int
+        name: str
+        count: int
+        created_at: str
+
+    await conn.execute(*Test.create_table_sql())
+
+    # Initial insert
+    record = Test(1, "Alice", 5, "2023-01-01")
+    was_updated = await record.upsert(conn)
+    assert not was_updated  # Should be False for initial insert
+
+    # Verify record was inserted
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert len(result) == 1
+    assert result[0] == record
+
+    # Update without insert_only - should update all fields including created_at
+    updated_record = Test(1, "Alice Updated", 10, "2023-01-02")
+    was_updated = await updated_record.upsert(conn)
+    assert was_updated  # Should be True for update
+
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert len(result) == 1
+    assert result[0] == updated_record
+
+    # Update with insert_only - should not update created_at
+    final_record = Test(1, "Alice Final", 15, "2023-01-03")
+    was_updated = await final_record.upsert(conn, insert_only={"created_at"})
+    assert was_updated  # Should be True for update
+
+    # Verify created_at was preserved
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert result[0].created_at == "2023-01-02"  # Should still be the previous value
+    assert result[0].name == "Alice Final"
+    assert result[0].count == 15
+
+    # Test force_update - should override insert_only and update created_at
+    force_record = Test(1, "Alice Force", 20, "2023-01-04")
+    was_updated = await force_record.upsert(
+        conn, insert_only={"created_at"}, force_update={"created_at"}
+    )
+    assert was_updated
+
+    # Verify created_at was updated despite insert_only
+    result = await Test.select(conn, where=sql("id = {}", 1))
+    assert result[0].created_at == "2023-01-04"  # Should be updated
+    assert result[0].name == "Alice Force"
+    assert result[0].count == 20
