@@ -440,3 +440,42 @@ def test_force_update_functionality():
     assert '"name"=EXCLUDED."name"' not in partial_query  # Excluded manually
     assert '"updated_at"=EXCLUDED."updated_at"' in partial_query
     assert '"created_at"=EXCLUDED."created_at"' in partial_query  # Force updated
+
+
+def test_primary_key_only_table_upsert():
+    """Test that upsert works correctly for tables with only primary key columns."""
+
+    @dataclass
+    class PrimaryKeyOnly(ModelBase, table_name="pk_only", primary_key="id"):
+        id: uuid.UUID
+
+    test_instance = PrimaryKeyOnly(uuid.uuid4())
+    insert_sql = test_instance.insert_sql()
+
+    # Test that upsert generates valid SQL with DO NOTHING
+    upsert_sql = PrimaryKeyOnly.upsert_sql(insert_sql)
+    query, params = upsert_sql.query()
+
+    # Should contain ON CONFLICT DO NOTHING since there are no updatable fields
+    assert "ON CONFLICT" in query
+    assert "DO NOTHING" in query
+    assert "DO UPDATE SET" not in query
+    assert len(params) == 1  # Only the ID parameter
+
+    # Test with compound primary key (still no other fields)
+    @dataclass
+    class CompoundPrimaryKeyOnly(
+        ModelBase, table_name="compound_pk_only", primary_key=("id1", "id2")
+    ):
+        id1: int
+        id2: str
+
+    compound_instance = CompoundPrimaryKeyOnly(1, "test")
+    compound_insert = compound_instance.insert_sql()
+    compound_upsert = CompoundPrimaryKeyOnly.upsert_sql(compound_insert)
+    compound_query, compound_params = compound_upsert.query()
+
+    assert "ON CONFLICT" in compound_query
+    assert "DO NOTHING" in compound_query
+    assert "DO UPDATE SET" not in compound_query
+    assert len(compound_params) == 2  # Both ID parameters

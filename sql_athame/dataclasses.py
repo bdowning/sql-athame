@@ -875,19 +875,31 @@ class ModelBase:
             force_update
         )  # Remove force_update from manual insert_only too
         all_insert_only = manual_insert_only | auto_insert_only
-        cached = cls._cached(
-            ("upsert_sql", tuple(sorted(all_insert_only))),
-            lambda: sql(
-                " ON CONFLICT ({pks}) DO UPDATE SET {assignments}",
+
+        def generate_upsert_fragment():
+            updatable_fields = cls.field_names(
+                exclude=(*cls.primary_key_names, *all_insert_only)
+            )
+            return sql(
+                " ON CONFLICT ({pks}) DO {action}",
                 insert_sql=insert_sql,
                 pks=sql.list(cls.primary_key_names_sql()),
-                assignments=sql.list(
-                    sql("{field}=EXCLUDED.{field}", field=x)
-                    for x in cls.field_names_sql(
-                        exclude=(*cls.primary_key_names, *all_insert_only)
+                action=(
+                    sql(
+                        "UPDATE SET {assignments}",
+                        assignments=sql.list(
+                            sql("{field}=EXCLUDED.{field}", field=sql.identifier(field))
+                            for field in updatable_fields
+                        ),
                     )
+                    if updatable_fields
+                    else sql.literal("NOTHING")
                 ),
-            ).flatten(),
+            ).flatten()
+
+        cached = cls._cached(
+            ("upsert_sql", tuple(sorted(all_insert_only))),
+            generate_upsert_fragment,
         )
         return Fragment([insert_sql, cached])
 
