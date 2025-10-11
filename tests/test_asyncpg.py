@@ -396,3 +396,171 @@ async def test_upsert_insert_only(conn):
     assert result[0].created_at == "2023-01-04"  # Should be updated
     assert result[0].name == "Alice Force"
     assert result[0].count == 20
+
+
+async def test_replace_multiple_with_replace_ignore(conn):
+    """Test replace_ignore ColumnInfo attribute."""
+
+    @dataclass(order=True)
+    class Test(ModelBase, table_name="test", primary_key="id"):
+        id: int
+        name: str
+        count: int
+        # metadata field should be ignored during comparison
+        metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
+
+    await conn.execute(*Test.create_table_sql())
+
+    # Insert initial data
+    data = [
+        Test(1, "Alice", 10, "meta1"),
+        Test(2, "Bob", 20, "meta2"),
+        Test(3, "Charlie", 30, "meta3"),
+    ]
+    await Test.insert_multiple(conn, data)
+
+    # Replace with same data but different metadata
+    # Since metadata is ignored, no updates should happen
+    new_data = [
+        Test(1, "Alice", 10, "different_meta"),
+        Test(2, "Bob", 20, "different_meta"),
+        Test(3, "Charlie", 30, "different_meta"),
+    ]
+    c, u, d = await Test.replace_multiple(conn, new_data, where=[])
+    assert not c  # No creates
+    assert not u  # No updates because metadata is ignored
+    assert not d  # No deletes
+
+    # Verify original metadata is preserved
+    result = await Test.select(conn, order_by="id")
+    assert result[0].metadata == "meta1"
+    assert result[1].metadata == "meta2"
+    assert result[2].metadata == "meta3"
+
+    # Now change a non-ignored field - should trigger update
+    # The metadata will be updated too (it's only ignored for comparison)
+    new_data[0] = Test(1, "Alice Updated", 10, "still_different")
+    c, u, d = await Test.replace_multiple(conn, new_data, where=[])
+    assert not c
+    assert len(u) == 1  # Should update because name changed
+    assert not d
+
+    # Verify update happened - metadata gets updated along with other fields
+    result = await Test.select(conn, where=sql("id = 1"))
+    assert result[0].name == "Alice Updated"
+    assert result[0].metadata == "still_different"  # Updated along with name
+
+
+async def test_replace_multiple_replace_ignore_with_force_update(conn):
+    """Test that force_update overrides replace_ignore."""
+
+    @dataclass(order=True)
+    class Test(ModelBase, table_name="test", primary_key="id"):
+        id: int
+        name: str
+        metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
+
+    await conn.execute(*Test.create_table_sql())
+
+    # Insert initial data
+    data = [Test(1, "Alice", "meta1"), Test(2, "Bob", "meta2")]
+    await Test.insert_multiple(conn, data)
+
+    # Replace with different metadata, using force_update
+    new_data = [Test(1, "Alice", "new_meta1"), Test(2, "Bob", "new_meta2")]
+    c, u, d = await Test.replace_multiple(
+        conn, new_data, where=[], force_update={"metadata"}
+    )
+    assert not c
+    assert len(u) == 2  # Should update because force_update overrides replace_ignore
+    assert not d
+
+    # Verify metadata was updated
+    result = await Test.select(conn, order_by="id")
+    assert result[0].metadata == "new_meta1"
+    assert result[1].metadata == "new_meta2"
+
+
+async def test_replace_multiple_replace_ignore_with_insert_only(conn):
+    """Test interaction between replace_ignore and insert_only."""
+
+    @dataclass(order=True)
+    class Test(ModelBase, table_name="test", primary_key="id"):
+        id: int
+        name: str
+        # Both replace_ignore and insert_only
+        created_at: Annotated[str, ColumnInfo(replace_ignore=True, insert_only=True)]
+        # Only replace_ignore
+        metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
+
+    await conn.execute(*Test.create_table_sql())
+
+    # Insert initial data
+    data = [Test(1, "Alice", "2023-01-01", "meta1")]
+    await Test.insert_multiple(conn, data)
+
+    # Try to replace with different created_at and metadata
+    new_data = [Test(1, "Alice", "2023-01-02", "meta2")]
+    c, u, d = await Test.replace_multiple(conn, new_data, where=[])
+    assert not c
+    assert not u  # No update because both fields are ignored
+    assert not d
+
+    # Verify original values preserved
+    result = await Test.select(conn)
+    assert result[0].created_at == "2023-01-01"
+    assert result[0].metadata == "meta1"
+
+    # Change name - should trigger update
+    # created_at is preserved (insert_only), metadata is updated (only ignored for comparison)
+    new_data = [Test(1, "Alice Updated", "2023-01-03", "meta3")]
+    c, u, d = await Test.replace_multiple(conn, new_data, where=[])
+    assert not c
+    assert len(u) == 1
+    assert not d
+
+    # Verify update happened
+    result = await Test.select(conn)
+    assert result[0].name == "Alice Updated"
+    assert result[0].created_at == "2023-01-01"  # Preserved (insert_only)
+    assert result[0].metadata == "meta3"  # Updated (only ignored for comparison)
+
+
+async def test_replace_multiple_replace_ignore_partial_match(conn):
+    """Test replace_ignore when only some records match."""
+
+    @dataclass(order=True)
+    class Test(ModelBase, table_name="test", primary_key="id"):
+        id: int
+        category: str
+        value: int
+        metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
+
+    await conn.execute(*Test.create_table_sql())
+
+    # Insert data with different categories
+    data = [
+        Test(1, "A", 10, "meta1"),
+        Test(2, "A", 20, "meta2"),
+        Test(3, "B", 30, "meta3"),
+    ]
+    await Test.insert_multiple(conn, data)
+
+    # Replace only category A with different metadata
+    new_data = [
+        Test(1, "A", 10, "new_meta1"),
+        Test(2, "A", 25, "new_meta2"),  # value changed
+    ]
+    c, u, d = await Test.replace_multiple(conn, new_data, where=sql("category = 'A'"))
+    assert not c
+    assert len(u) == 1  # Only id=2 should update (value changed)
+    assert not d  # Category B record not affected by where clause
+
+    # Verify results
+    result = await Test.select(conn, order_by="id")
+    assert len(result) == 3
+    assert result[0].metadata == "meta1"  # Unchanged (no update happened)
+    assert result[0].value == 10
+    assert result[1].metadata == "new_meta2"  # Updated along with value
+    assert result[1].value == 25  # Updated
+    assert result[2] == data[2]  # Category B unchanged
