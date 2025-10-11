@@ -1535,7 +1535,8 @@ class ModelBase:
         """
         # For comparison purposes, combine auto-detected insert_only fields with manual ones
         all_insert_only = cls.insert_only_field_names() | set(insert_only)
-        ignore = sorted(set(ignore) | all_insert_only)
+        default_ignore = cls.replace_ignore_field_names() - set(force_update)
+        ignore = sorted(set(ignore) | default_ignore | all_insert_only)
         differences_ignoring = cls._cached(
             ("differences_ignoring", tuple(ignore)),
             lambda: cls._get_differences_ignoring_fn(ignore),
