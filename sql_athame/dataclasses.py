@@ -46,6 +46,7 @@ class ColumnInfo:
         serialize: Function to transform Python values before database storage
         deserialize: Function to transform database values back to Python objects
         insert_only: Whether this field should only be set on INSERT, not UPDATE in upsert operations
+        replace_ignore: Whether this field should be ignored for `replace_multiple`
 
     Example:
         >>> from dataclasses import dataclass
@@ -72,6 +73,7 @@ class ColumnInfo:
     serialize: Optional[Callable[[Any], Any]] = None
     deserialize: Optional[Callable[[Any], Any]] = None
     insert_only: Optional[bool] = None
+    replace_ignore: Optional[bool] = None
 
     def __post_init__(self, constraints: Union[str, Iterable[str], None]) -> None:
         if constraints is not None:
@@ -98,6 +100,9 @@ class ColumnInfo:
             serialize=b.serialize if b.serialize is not None else a.serialize,
             deserialize=b.deserialize if b.deserialize is not None else a.deserialize,
             insert_only=b.insert_only if b.insert_only is not None else a.insert_only,
+            replace_ignore=(
+                b.replace_ignore if b.replace_ignore is not None else a.replace_ignore
+            ),
         )
 
 
@@ -118,6 +123,7 @@ class ConcreteColumnInfo:
         serialize: Optional serialization function
         deserialize: Optional deserialization function
         insert_only: Whether this field should only be set on INSERT, not UPDATE
+        replace_ignore: Whether this field should be ignored for `replace_multiple`
     """
 
     field: Field
@@ -126,9 +132,10 @@ class ConcreteColumnInfo:
     create_type: str
     nullable: bool
     constraints: tuple[str, ...]
-    serialize: Optional[Callable[[Any], Any]] = None
-    deserialize: Optional[Callable[[Any], Any]] = None
-    insert_only: bool = False
+    serialize: Optional[Callable[[Any], Any]]
+    deserialize: Optional[Callable[[Any], Any]]
+    insert_only: bool
+    replace_ignore: bool
 
     @staticmethod
     def from_column_info(
@@ -163,6 +170,7 @@ class ConcreteColumnInfo:
             serialize=info.serialize,
             deserialize=info.deserialize,
             insert_only=bool(info.insert_only),
+            replace_ignore=bool(info.replace_ignore),
         )
 
     def create_table_string(self) -> str:
@@ -383,6 +391,20 @@ class ModelBase:
             ("insert_only_field_names",),
             lambda: {
                 ci.field.name for ci in cls.column_info().values() if ci.insert_only
+            },
+        )
+
+    @classmethod
+    def replace_ignore_field_names(cls) -> set[str]:
+        """Get set of field names marked as replace_ignore in ColumnInfo.
+
+        Returns:
+            Set of field names that should be ignored for `replace_multiple`
+        """
+        return cls._cached(
+            ("replace_ignore_field_names",),
+            lambda: {
+                ci.field.name for ci in cls.column_info().values() if ci.replace_ignore
             },
         )
 
@@ -1366,7 +1388,8 @@ class ModelBase:
         """
         # For comparison purposes, combine auto-detected insert_only fields with manual ones
         all_insert_only = cls.insert_only_field_names() | set(insert_only)
-        ignore = sorted(set(ignore) | all_insert_only)
+        default_ignore = cls.replace_ignore_field_names() - set(force_update)
+        ignore = sorted(set(ignore) | default_ignore | all_insert_only)
         equal_ignoring = cls._cached(
             ("equal_ignoring", tuple(ignore)),
             lambda: cls._get_equal_ignoring_fn(ignore),
