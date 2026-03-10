@@ -20,15 +20,14 @@ from typing import (
 from typing_extensions import TypeAlias
 
 from .base import Fragment, sql
+from .engines import is_asyncpg_fetchable
+from .types import AnyConnection, AnyFetchable, Row
 
 Where: TypeAlias = Union[Fragment, Iterable[Fragment]]
 # KLUDGE to avoid a string argument being valid
 SequenceOfStrings: TypeAlias = Union[list[str], tuple[str, ...]]
 FieldNames: TypeAlias = SequenceOfStrings
 FieldNamesSet: TypeAlias = Union[SequenceOfStrings, set[str]]
-
-Connection: TypeAlias = Any
-Pool: TypeAlias = Any
 
 
 @dataclass
@@ -527,7 +526,9 @@ class ModelBase:
             return [sql.value(value) for value in self.field_values()]
 
     @classmethod
-    def _get_from_mapping_fn(cls: type[T]) -> Callable[[Mapping[str, Any]], T]:
+    def _get_from_mapping_fn(
+        cls: type[T],
+    ) -> Callable[[Union[Mapping[str, Any], Row]], T]:
         """Generate optimized function to create instances from mappings.
 
         This method generates and compiles a function that efficiently creates
@@ -555,7 +556,7 @@ class ModelBase:
         return env["from_mapping"]
 
     @classmethod
-    def from_mapping(cls: type[T], mapping: Mapping[str, Any], /) -> T:
+    def from_mapping(cls: type[T], mapping: Union[Mapping[str, Any], Row], /) -> T:
         """Create a model instance from a dictionary-like mapping.
 
         This method applies any configured deserialize functions to the values
@@ -689,7 +690,7 @@ class ModelBase:
     @classmethod
     async def cursor_from(
         cls: type[T],
-        connection: Connection,
+        connection: AnyConnection,
         query: Fragment,
         prefetch: int = 1000,
     ) -> AsyncGenerator[T, None]:
@@ -703,13 +704,13 @@ class ModelBase:
         Yields:
             Model instances from the query results
         """
-        async for row in connection.cursor(*query, prefetch=prefetch):
+        async for row in query.cursor(connection, prefetch=prefetch):
             yield cls.from_mapping(row)
 
     @classmethod
     def select_cursor(
         cls: type[T],
-        connection: Connection,
+        connection: AnyConnection,
         order_by: Union[FieldNames, str] = (),
         for_update: bool = False,
         where: Where = (),
@@ -740,7 +741,7 @@ class ModelBase:
     @classmethod
     async def fetch_from(
         cls: type[T],
-        connection_or_pool: Union[Connection, Pool],
+        connection: AnyFetchable,
         query: Fragment,
     ) -> list[T]:
         """Execute a query and return model instances.
@@ -752,12 +753,12 @@ class ModelBase:
         Returns:
             List of model instances from the query results
         """
-        return [cls.from_mapping(row) for row in await connection_or_pool.fetch(*query)]
+        return [cls.from_mapping(row) for row in await query.fetch(connection)]
 
     @classmethod
     async def select(
         cls: type[T],
-        connection_or_pool: Union[Connection, Pool],
+        connection: AnyFetchable,
         order_by: Union[FieldNames, str] = (),
         for_update: bool = False,
         where: Where = (),
@@ -777,7 +778,7 @@ class ModelBase:
             >>> users = await User.select(pool, where=sql("active = {}", True))
         """
         return await cls.fetch_from(
-            connection_or_pool,
+            connection,
             cls.select_sql(order_by=order_by, for_update=for_update, where=where),
         )
 
@@ -807,9 +808,7 @@ class ModelBase:
         )
 
     @classmethod
-    async def create(
-        cls: type[T], connection_or_pool: Union[Connection, Pool], **kwargs: Any
-    ) -> T:
+    async def create(cls: type[T], connection: AnyFetchable, **kwargs: Any) -> T:
         """Create a new record in the database.
 
         Args:
@@ -822,7 +821,8 @@ class ModelBase:
         Example:
             >>> user = await User.create(pool, name="Alice", email="alice@example.com")
         """
-        row = await connection_or_pool.fetchrow(*cls.create_sql(**kwargs))
+        row = await cls.create_sql(**kwargs).fetchrow(connection)
+        assert row is not None
         return cls.from_mapping(row)
 
     def insert_sql(self, exclude: FieldNamesSet = ()) -> Fragment:
@@ -852,7 +852,7 @@ class ModelBase:
         )
 
     async def insert(
-        self, connection_or_pool: Union[Connection, Pool], exclude: FieldNamesSet = ()
+        self, connection: AnyFetchable, exclude: FieldNamesSet = ()
     ) -> str:
         """Insert this instance into the database.
 
@@ -863,7 +863,7 @@ class ModelBase:
         Returns:
             Result string from the database operation
         """
-        return await connection_or_pool.execute(*self.insert_sql(exclude))
+        return await self.insert_sql(exclude).execute(connection)
 
     @classmethod
     def upsert_sql(
@@ -927,7 +927,7 @@ class ModelBase:
 
     async def upsert(
         self,
-        connection_or_pool: Union[Connection, Pool],
+        connection: AnyFetchable,
         exclude: FieldNamesSet = (),
         insert_only: FieldNamesSet = (),
         force_update: FieldNamesSet = (),
@@ -966,7 +966,8 @@ class ModelBase:
                 force_update=force_update,
             ),
         )
-        result = await connection_or_pool.fetchrow(*query)
+        result = await query.fetchrow(connection)
+        assert result is not None
         return result["xmax"] != 0
 
     @classmethod
@@ -1002,7 +1003,7 @@ class ModelBase:
 
     @classmethod
     async def delete_multiple(
-        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection: AnyFetchable, rows: Iterable[T]
     ) -> str:
         """Delete multiple records from the database.
 
@@ -1013,7 +1014,7 @@ class ModelBase:
         Returns:
             Result string from the database operation
         """
-        return await connection_or_pool.execute(*cls.delete_multiple_sql(rows))
+        return await cls.delete_multiple_sql(rows).execute(connection)
 
     @classmethod
     def insert_multiple_sql(cls: type[T], rows: Iterable[T]) -> Fragment:
@@ -1105,7 +1106,7 @@ class ModelBase:
 
     @classmethod
     async def insert_multiple_executemany(
-        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection: AnyFetchable, rows: Iterable[T]
     ) -> None:
         """Insert multiple records using asyncpg's executemany.
 
@@ -1115,14 +1116,17 @@ class ModelBase:
             connection_or_pool: Database connection or pool
             rows: Model instances to insert
         """
+        if not is_asyncpg_fetchable(connection):
+            raise TypeError("executemany currently only supported on asyncpg")
+        conn: Any = connection
         args = [r.field_values() for r in rows]
         query = cls.insert_multiple_executemany_chunk_sql(1).query()[0]
         if args:
-            await connection_or_pool.executemany(query, args)
+            await conn.executemany(query, args)
 
     @classmethod
     async def insert_multiple_unnest(
-        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection: AnyFetchable, rows: Iterable[T]
     ) -> str:
         """Insert multiple records using PostgreSQL UNNEST.
 
@@ -1135,11 +1139,11 @@ class ModelBase:
         Returns:
             Result string from the database operation
         """
-        return await connection_or_pool.execute(*cls.insert_multiple_sql(rows))
+        return await cls.insert_multiple_sql(rows).execute(connection)
 
     @classmethod
     async def insert_multiple_array_safe(
-        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection: AnyFetchable, rows: Iterable[T]
     ) -> str:
         """Insert multiple records using VALUES syntax with chunking.
 
@@ -1156,14 +1160,12 @@ class ModelBase:
         """
         last = ""
         for chunk in chunked(rows, 100):
-            last = await connection_or_pool.execute(
-                *cls.insert_multiple_array_safe_sql(chunk)
-            )
+            last = await cls.insert_multiple_array_safe_sql(chunk).execute(connection)
         return last
 
     @classmethod
     async def insert_multiple(
-        cls: type[T], connection_or_pool: Union[Connection, Pool], rows: Iterable[T]
+        cls: type[T], connection: AnyFetchable, rows: Iterable[T]
     ) -> str:
         """Insert multiple records using the configured insert_multiple_mode.
 
@@ -1181,17 +1183,17 @@ class ModelBase:
             - 'executemany': Uses asyncpg's executemany, slowest but most compatible
         """
         if cls.insert_multiple_mode == "executemany":
-            await cls.insert_multiple_executemany(connection_or_pool, rows)
+            await cls.insert_multiple_executemany(connection, rows)
             return "INSERT"
         elif cls.insert_multiple_mode == "array_safe":
-            return await cls.insert_multiple_array_safe(connection_or_pool, rows)
+            return await cls.insert_multiple_array_safe(connection, rows)
         else:
-            return await cls.insert_multiple_unnest(connection_or_pool, rows)
+            return await cls.insert_multiple_unnest(connection, rows)
 
     @classmethod
     async def upsert_multiple_executemany(
         cls: type[T],
-        connection_or_pool: Union[Connection, Pool],
+        connection: AnyFetchable,
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
         force_update: FieldNamesSet = (),
@@ -1204,6 +1206,9 @@ class ModelBase:
             insert_only: Field names that should only be set on INSERT, not UPDATE
             force_update: Field names to force include in UPDATE clause, overriding insert_only settings
         """
+        if not is_asyncpg_fetchable(connection):
+            raise TypeError("executemany currently only supported on asyncpg")
+        conn: Any = connection
         args = [r.field_values() for r in rows]
         query = cls.upsert_sql(
             cls.insert_multiple_executemany_chunk_sql(1),
@@ -1211,12 +1216,12 @@ class ModelBase:
             force_update=force_update,
         ).query()[0]
         if args:
-            await connection_or_pool.executemany(query, args)
+            await conn.executemany(query, args)
 
     @classmethod
     async def upsert_multiple_unnest(
         cls: type[T],
-        connection_or_pool: Union[Connection, Pool],
+        connection: AnyFetchable,
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
         force_update: FieldNamesSet = (),
@@ -1232,18 +1237,16 @@ class ModelBase:
         Returns:
             Result string from the database operation
         """
-        return await connection_or_pool.execute(
-            *cls.upsert_sql(
-                cls.insert_multiple_sql(rows),
-                insert_only=insert_only,
-                force_update=force_update,
-            )
-        )
+        return await cls.upsert_sql(
+            cls.insert_multiple_sql(rows),
+            insert_only=insert_only,
+            force_update=force_update,
+        ).execute(connection)
 
     @classmethod
     async def upsert_multiple_array_safe(
         cls: type[T],
-        connection_or_pool: Union[Connection, Pool],
+        connection: AnyFetchable,
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
         force_update: FieldNamesSet = (),
@@ -1264,19 +1267,17 @@ class ModelBase:
         """
         last = ""
         for chunk in chunked(rows, 100):
-            last = await connection_or_pool.execute(
-                *cls.upsert_sql(
-                    cls.insert_multiple_array_safe_sql(chunk),
-                    insert_only=insert_only,
-                    force_update=force_update,
-                )
-            )
+            last = await cls.upsert_sql(
+                cls.insert_multiple_array_safe_sql(chunk),
+                insert_only=insert_only,
+                force_update=force_update,
+            ).execute(connection)
         return last
 
     @classmethod
     async def upsert_multiple(
         cls: type[T],
-        connection_or_pool: Union[Connection, Pool],
+        connection: AnyFetchable,
         rows: Iterable[T],
         insert_only: FieldNamesSet = (),
         force_update: FieldNamesSet = (),
@@ -1306,7 +1307,7 @@ class ModelBase:
 
         if cls.insert_multiple_mode == "executemany":
             await cls.upsert_multiple_executemany(
-                connection_or_pool,
+                connection,
                 rows,
                 insert_only=insert_only,
                 force_update=force_update,
@@ -1314,14 +1315,14 @@ class ModelBase:
             return "INSERT"
         elif cls.insert_multiple_mode == "array_safe":
             return await cls.upsert_multiple_array_safe(
-                connection_or_pool,
+                connection,
                 rows,
                 insert_only=insert_only,
                 force_update=force_update,
             )
         else:
             return await cls.upsert_multiple_unnest(
-                connection_or_pool,
+                connection,
                 rows,
                 insert_only=insert_only,
                 force_update=force_update,
@@ -1351,7 +1352,7 @@ class ModelBase:
     @classmethod
     async def plan_replace_multiple(
         cls: type[T],
-        connection: Connection,
+        connection: AnyConnection,
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,
@@ -1421,7 +1422,7 @@ class ModelBase:
     @classmethod
     async def replace_multiple(
         cls: type[T],
-        connection: Connection,
+        connection: AnyConnection,
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,
@@ -1496,7 +1497,7 @@ class ModelBase:
     @classmethod
     async def replace_multiple_reporting_differences(
         cls: type[T],
-        connection: Connection,
+        connection: AnyConnection,
         rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
         *,
         where: Where,
@@ -1592,7 +1593,7 @@ class ReplaceMultiplePlan(Generic[T]):
         """
         return (self.created, self.updated, self.deleted)
 
-    async def execute_upserts(self, connection: Connection) -> None:
+    async def execute_upserts(self, connection: AnyConnection) -> None:
         """Execute the upsert operations (creates and updates).
 
         Args:
@@ -1606,7 +1607,7 @@ class ReplaceMultiplePlan(Generic[T]):
                 force_update=self.force_update,
             )
 
-    async def execute_deletes(self, connection: Connection) -> None:
+    async def execute_deletes(self, connection: AnyConnection) -> None:
         """Execute the delete operations.
 
         Args:
@@ -1615,7 +1616,7 @@ class ReplaceMultiplePlan(Generic[T]):
         if self.deleted:
             await self.model_class.delete_multiple(connection, self.deleted)
 
-    async def execute(self, connection: Connection) -> None:
+    async def execute(self, connection: AnyConnection) -> None:
         """Execute all planned operations (upserts then deletes).
 
         Args:

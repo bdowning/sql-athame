@@ -2,7 +2,7 @@ import dataclasses
 import json
 import re
 import string
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from typing import (
     Any,
     Callable,
@@ -14,9 +14,10 @@ from typing import (
 
 from typing_extensions import Literal
 
+from .engines import async_cursor, async_execute, async_fetch
 from .escape import escape
 from .sqlalchemy import sqlalchemy_text_from_fragment
-from .types import FlatPart, Part, Placeholder, Slot
+from .types import AnyConnection, AnyFetchable, FlatPart, Part, Placeholder, Row, Slot
 
 newline_whitespace_re = re.compile(r"\s*\n\s*")
 auto_numbered_re = re.compile(r"[A-Za-z0-9_]")
@@ -356,6 +357,29 @@ class Fragment:
             >>> case = sql("CASE {clauses} END", clauses=sql(" ").join(clauses))
         """
         return Fragment(list(join_parts(parts, infix=self)))
+
+    async def execute(self, conn: AnyFetchable) -> str:
+        return await async_execute(conn, self)
+
+    async def fetch(self, conn: AnyFetchable) -> list[Row]:
+        return await async_fetch(conn, self)
+
+    async def fetchrow(self, conn: AnyFetchable) -> Optional[Row]:
+        rows = await self.fetch(conn)
+        if rows:
+            return rows[0]
+        return None
+
+    async def fetchval(self, conn: AnyFetchable) -> Any:
+        row = await self.fetchrow(conn)
+        if row:
+            return row[0]
+        return None
+
+    def cursor(
+        self, conn: AnyConnection, *, prefetch: int = 1000
+    ) -> AsyncIterator[Row]:
+        return async_cursor(conn, self, prefetch=prefetch)
 
 
 class SQLFormatter:
