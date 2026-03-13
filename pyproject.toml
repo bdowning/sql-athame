@@ -28,6 +28,7 @@ dev = [
     "bump2version",
     "ipython",
     "mypy",
+    "pdbpp>=0.12.1",
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
