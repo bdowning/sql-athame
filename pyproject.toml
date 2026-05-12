@@ -33,6 +33,7 @@ dev = [
     "pytest-asyncio",
     "pytest-cov",
     "ruff",
+    "xdoctest>=1.3.2",
 ]
 
 [build-system]
@@ -79,6 +80,8 @@ pyupgrade.keep-runtime-typing = true
 [tool.pytest.ini_options]
 addopts = [
     "-v",
+    "--xdoctest",
+    "--xdoctest-global-exec=from sql_athame._doctest import *",
     "--cov",
     "--cov-report", "xml:results/pytest/coverage.xml",
     "--cov-report", "html:results/pytest/cov_html",

@@ -49,6 +49,7 @@ class ColumnInfo:
 
     Example:
         >>> from dataclasses import dataclass
+        >>> from datetime import datetime
         >>> from typing import Annotated
         >>> from sql_athame import ModelBase, ColumnInfo
         >>> import json
@@ -453,9 +454,13 @@ class ModelBase:
             Tuple containing the primary key field values
 
         Example:
-            >>> user = User(id=UUID(...), name="Alice")
+            >>> user = User(
+            ...     id=USER_ID,
+            ...     name="Alice",
+            ...     email=None,
+            ... )
             >>> user.primary_key()
-            (UUID('...'),)
+            (UUID('00000000-0000-0000-0000-000000000001'),)
         """
         return tuple(getattr(self, pk) for pk in self.primary_key_names)
 
@@ -569,8 +574,10 @@ class ModelBase:
             New instance of this model class
 
         Example:
-            >>> row = {"id": UUID(...), "name": "Alice", "email": None}
+            >>> row = user_row()
             >>> user = User.from_mapping(row)
+            >>> user
+            User(id=UUID('00000000-0000-0000-0000-000000000001'), name='Alice', email=None)
         """
         # KLUDGE nasty but... efficient?
         from_mapping_fn = cls._get_from_mapping_fn()
@@ -594,8 +601,14 @@ class ModelBase:
             New instance of this model class
 
         Example:
-            >>> row = {"user_id": UUID(...), "user_name": "Alice", "user_email": None}
+            >>> row = {
+            ...     "user_id": USER_ID,
+            ...     "user_name": "Alice",
+            ...     "user_email": None,
+            ... }
             >>> user = User.from_prepended_mapping(row, "user_")
+            >>> user
+            User(id=UUID('00000000-0000-0000-0000-000000000001'), name='Alice', email=None)
         """
         filtered_dict: dict[str, Any] = {}
         for k, v in mapping.items():
@@ -729,8 +742,8 @@ class ModelBase:
             Model instances from the SELECT results
 
         Example:
-            >>> async for user in User.select_cursor(conn, where=sql("active = {}", True)):
-            ...     print(user.name)
+            async for user in User.select_cursor(conn, where=sql("active = {}", True)):
+                print(user.name)
         """
         return cls.cursor_from(
             connection,
@@ -775,7 +788,7 @@ class ModelBase:
             List of model instances from the SELECT results
 
         Example:
-            >>> users = await User.select(pool, where=sql("active = {}", True))
+            users = await User.select(pool, where=sql("active = {}", True))
         """
         return await cls.fetch_from(
             connection,
@@ -819,7 +832,7 @@ class ModelBase:
             Model instance representing the created record
 
         Example:
-            >>> user = await User.create(pool, name="Alice", email="alice@example.com")
+            user = await User.create(pool, name="Alice", email="alice@example.com")
         """
         row = await cls.create_sql(**kwargs).fetchrow(connection)
         assert row is not None
@@ -835,7 +848,7 @@ class ModelBase:
             Fragment containing INSERT statement
 
         Example:
-            >>> user = User(name="Alice", email="alice@example.com")
+            >>> user = InsertUser(name="Alice", email="alice@example.com")
             >>> list(user.insert_sql())
             ['INSERT INTO "users" ("name", "email") VALUES ($1, $2)', 'Alice', 'alice@example.com']
         """
@@ -883,9 +896,14 @@ class ModelBase:
             Fragment containing INSERT ... ON CONFLICT DO UPDATE statement
 
         Example:
+            >>> user = User(
+            ...     id=USER_ID,
+            ...     name="Alice",
+            ...     email="alice@example.com",
+            ... )
             >>> insert = user.insert_sql()
             >>> list(User.upsert_sql(insert))
-            ['INSERT INTO "users" ("name", "email") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name"=EXCLUDED."name", "email"=EXCLUDED."email"', 'Alice', 'alice@example.com']
+            ['INSERT INTO "users" ("id", "name", "email") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name"=EXCLUDED."name", "email"=EXCLUDED."email"', UUID('00000000-0000-0000-0000-000000000001'), 'Alice', 'alice@example.com']
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
@@ -944,11 +962,11 @@ class ModelBase:
             True if the record was updated, False if it was inserted
 
         Example:
-            >>> user = User(id=1, name="Alice", created_at=datetime.now())
-            >>> # Only set created_at on INSERT, not UPDATE
-            >>> was_updated = await user.upsert(pool, insert_only={'created_at'})
-            >>> # Force update created_at even if it's marked insert_only in ColumnInfo
-            >>> was_updated = await user.upsert(pool, force_update={'created_at'})
+            user = User(id=1, name="Alice", created_at=datetime.now())
+            # Only set created_at on INSERT, not UPDATE
+            was_updated = await user.upsert(pool, insert_only={'created_at'})
+            # Force update created_at even if it's marked insert_only in ColumnInfo
+            was_updated = await user.upsert(pool, force_update={'created_at'})
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
@@ -981,9 +999,13 @@ class ModelBase:
             Fragment containing DELETE statement with UNNEST-based WHERE clause
 
         Example:
-            >>> users = [user1, user2, user3]
+            >>> users = [
+            ...     User(USER_ID, "Alice", None),
+            ...     User(USER_ID_2, "Bob", None),
+            ...     User(USER_ID_3, "Cara", None),
+            ... ]
             >>> list(User.delete_multiple_sql(users))
-            ['DELETE FROM "users" WHERE ("id") IN (SELECT * FROM UNNEST($1::UUID[]))', (uuid1, uuid2, uuid3)]
+            ['DELETE FROM "users" WHERE ("id") IN (SELECT * FROM UNNEST($1::UUID[]))', (UUID('00000000-0000-0000-0000-000000000001'), UUID('00000000-0000-0000-0000-000000000002'), UUID('00000000-0000-0000-0000-000000000003'))]
         """
         cached = cls._cached(
             ("delete_multiple_sql",),
@@ -1029,8 +1051,8 @@ class ModelBase:
             Fragment containing INSERT ... SELECT FROM UNNEST statement
 
         Example:
-            >>> users = [User(name="Alice"), User(name="Bob")]
-            >>> list(User.insert_multiple_sql(users))
+            >>> users = [InsertUser(name="Alice"), InsertUser(name="Bob")]
+            >>> list(InsertUser.insert_multiple_sql(users))
             ['INSERT INTO "users" ("name", "email") SELECT * FROM UNNEST($1::TEXT[], $2::TEXT[])', ('Alice', 'Bob'), (None, None)]
         """
         cached = cls._cached(
@@ -1294,8 +1316,8 @@ class ModelBase:
             Result string from the database operation
 
         Example:
-            >>> await User.upsert_multiple(pool, users, insert_only={'created_at'})
-            >>> await User.upsert_multiple(pool, users, force_update={'created_at'})
+            await User.upsert_multiple(pool, users, insert_only={'created_at'})
+            await User.upsert_multiple(pool, users, force_update={'created_at'})
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
@@ -1377,10 +1399,10 @@ class ModelBase:
             ReplaceMultiplePlan containing the planned operations
 
         Example:
-            >>> plan = await User.plan_replace_multiple(
-            ...     conn, new_users, where=sql("department_id = {}", dept_id)
-            ... )
-            >>> print(f"Will create {len(plan.created)}, update {len(plan.updated)}, delete {len(plan.deleted)}")
+            plan = await User.plan_replace_multiple(
+                conn, new_users, where=sql("department_id = {}", dept_id)
+            )
+            print(f"Will create {len(plan.created)}, update {len(plan.updated)}, delete {len(plan.deleted)}")
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
@@ -1448,9 +1470,9 @@ class ModelBase:
             Tuple of (created_records, updated_records, deleted_records)
 
         Example:
-            >>> created, updated, deleted = await User.replace_multiple(
-            ...     conn, new_users, where=sql("department_id = {}", dept_id)
-            ... )
+            created, updated, deleted = await User.replace_multiple(
+                conn, new_users, where=sql("department_id = {}", dept_id)
+            )
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically
@@ -1523,11 +1545,11 @@ class ModelBase:
             where update_triples contains (old_record, new_record, changed_field_names)
 
         Example:
-            >>> created, updates, deleted = await User.replace_multiple_reporting_differences(
-            ...     conn, new_users, where=sql("department_id = {}", dept_id)
-            ... )
-            >>> for old, new, fields in updates:
-            ...     print(f"Updated {old.name}: changed {', '.join(fields)}")
+            created, updates, deleted = await User.replace_multiple_reporting_differences(
+                conn, new_users, where=sql("department_id = {}", dept_id)
+            )
+            for old, new, fields in updates:
+                print(f"Updated {old.name}: changed {', '.join(fields)}")
 
         Note:
             Fields marked with ColumnInfo(insert_only=True) are automatically

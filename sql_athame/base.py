@@ -328,7 +328,11 @@ class Fragment:
             >>> list(frag)
             ['SELECT * FROM users WHERE id = $1 AND name = $2', 42, 'Alice']
             >>> # Can be used directly with asyncpg
-            >>> await conn.fetch(*frag)
+            >>> class Conn:
+            ...     async def fetch(self, query, *args):
+            ...         return [query, *args]
+            >>> await Conn().fetch(*frag)
+            ['SELECT * FROM users WHERE id = $1 AND name = $2', 42, 'Alice']
         """
         sql, args = self.query()
         return iter((sql, *args))
@@ -418,14 +422,15 @@ class SQLFormatter:
 
         Example:
             >>> sql("SELECT * FROM users WHERE id = {}", 42)
-            Fragment(['SELECT * FROM users WHERE id = ', Placeholder('0', 42)])
+            Fragment(parts=['SELECT * FROM users WHERE id = ', Placeholder(name='0', value=42)])
 
             >>> sql("SELECT * FROM users WHERE id = {id} AND name = {name}", id=42, name="Alice")
-            Fragment(['SELECT * FROM users WHERE id = ', Placeholder('id', 42), ' AND name = ', Placeholder('name', 'Alice')])
+            Fragment(parts=['SELECT * FROM users WHERE id = ', Placeholder(name='id', value=42), ' AND name = ', Placeholder(name='name', value='Alice')])
 
             >>> # Fragments can be embedded
             >>> where_clause = sql("active = {}", True)
             >>> sql("SELECT * FROM users WHERE {}", where_clause)
+            Fragment(parts=['SELECT * FROM users WHERE ', Fragment(parts=['active = ', Placeholder(name='0', value=True)])])
         """
         if not preserve_formatting:
             fmt = newline_whitespace_re.sub(" ", fmt)
@@ -467,7 +472,7 @@ class SQLFormatter:
 
         Example:
             >>> sql.value(42)
-            Fragment([Placeholder('value', 42)])
+            Fragment(parts=[Placeholder(name='value', value=42)])
         """
         placeholder = Placeholder("value", value)
         return Fragment([placeholder])
@@ -535,7 +540,7 @@ class SQLFormatter:
 
         Example:
             >>> sql.literal("ORDER BY created_at DESC")
-            Fragment(['ORDER BY created_at DESC'])
+            Fragment(parts=['ORDER BY created_at DESC'])
         """
         return Fragment([text])
 
