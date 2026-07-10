@@ -1,8 +1,6 @@
 import dataclasses
 from collections.abc import AsyncIterator, Mapping
-from typing import TYPE_CHECKING, Any, Protocol, Union
-
-from typing_extensions import TypeAlias
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, Union
 
 
 @dataclasses.dataclass(eq=False)
@@ -19,7 +17,7 @@ class Slot:
 
 
 Part: TypeAlias = Union[str, Placeholder, Slot, "Fragment"]
-FlatPart: TypeAlias = Union[str, Placeholder, Slot]
+FlatPart: TypeAlias = str | Placeholder | Slot
 
 Row: TypeAlias = Mapping[str | int, Any]
 
@@ -42,8 +40,8 @@ class SqlalchemyAsyncConnection(Protocol):
     def stream(self, statement: Any, parameters: dict | None = None) -> Any: ...
 
 
-AnyFetchable: TypeAlias = Union[AsyncpgFetchable, SqlalchemyAsyncConnection]
-AnyConnection: TypeAlias = Union[AsyncpgConnection, SqlalchemyAsyncConnection]
+AnyFetchable: TypeAlias = AsyncpgFetchable | SqlalchemyAsyncConnection
+AnyConnection: TypeAlias = AsyncpgConnection | SqlalchemyAsyncConnection
 
 
 if TYPE_CHECKING:

@@ -5,11 +5,10 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, TypeAlias
 
 import asyncpg
 import pytest
-from typing_extensions import TypeAlias
 
 from sql_athame import ColumnInfo, ModelBase, sql
 
@@ -327,7 +326,7 @@ async def test_unnest_json(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
         id: Serial
-        json: Annotated[Optional[list], ColumnInfo(type="JSONB", nullable=True)]
+        json: Annotated[list | None, ColumnInfo(type="JSONB", nullable=True)]
 
     if isinstance(conn, asyncpg.Connection):
         await conn.set_type_codec(

@@ -1,15 +1,15 @@
 import datetime
 import functools
-import sys
+import operator
 import uuid
-from collections.abc import AsyncGenerator, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from dataclasses import Field, InitVar, dataclass, fields
+from types import UnionType
 from typing import (
     Annotated,
     Any,
-    Callable,
     Generic,
-    Optional,
+    TypeAlias,
     TypeVar,
     Union,
     get_args,
@@ -17,17 +17,15 @@ from typing import (
     get_type_hints,
 )
 
-from typing_extensions import TypeAlias
-
 from .base import Fragment, sql
 from .engines import is_asyncpg_fetchable
 from .types import AnyConnection, AnyFetchable, Row
 
-Where: TypeAlias = Union[Fragment, Iterable[Fragment]]
+Where: TypeAlias = Fragment | Iterable[Fragment]
 # KLUDGE to avoid a string argument being valid
-SequenceOfStrings: TypeAlias = Union[list[str], tuple[str, ...]]
+SequenceOfStrings: TypeAlias = list[str] | tuple[str, ...]
 FieldNames: TypeAlias = SequenceOfStrings
-FieldNamesSet: TypeAlias = Union[SequenceOfStrings, set[str]]
+FieldNamesSet: TypeAlias = SequenceOfStrings | set[str]
 
 
 @dataclass
@@ -63,19 +61,19 @@ class ColumnInfo:
         ...     created_at: Annotated[datetime, ColumnInfo(insert_only=True)]
     """
 
-    type: Optional[str] = None
-    create_type: Optional[str] = None
-    nullable: Optional[bool] = None
+    type: str | None = None
+    create_type: str | None = None
+    nullable: bool | None = None
 
     _constraints: tuple[str, ...] = ()
-    constraints: InitVar[Union[str, Iterable[str], None]] = None
+    constraints: InitVar[str | Iterable[str] | None] = None
 
-    serialize: Optional[Callable[[Any], Any]] = None
-    deserialize: Optional[Callable[[Any], Any]] = None
-    insert_only: Optional[bool] = None
-    replace_ignore: Optional[bool] = None
+    serialize: Callable[[Any], Any] | None = None
+    deserialize: Callable[[Any], Any] | None = None
+    insert_only: bool | None = None
+    replace_ignore: bool | None = None
 
-    def __post_init__(self, constraints: Union[str, Iterable[str], None]) -> None:
+    def __post_init__(self, constraints: str | Iterable[str] | None) -> None:
         if constraints is not None:
             if type(constraints) is str:
                 constraints = (constraints,)
@@ -132,8 +130,8 @@ class ConcreteColumnInfo:
     create_type: str
     nullable: bool
     constraints: tuple[str, ...]
-    serialize: Optional[Callable[[Any], Any]]
-    deserialize: Optional[Callable[[Any], Any]]
+    serialize: Callable[[Any], Any] | None
+    deserialize: Callable[[Any], Any] | None
     insert_only: bool
     replace_ignore: bool
 
@@ -200,12 +198,7 @@ class ConcreteColumnInfo:
         return value
 
 
-UNION_TYPES: tuple = (Union,)
-if sys.version_info >= (3, 10):
-    from types import UnionType
-
-    UNION_TYPES = (Union, UnionType)
-
+UNION_TYPES = (Union, UnionType)
 NULLABLE_TYPES = (type(None), Any, object)
 
 
@@ -218,7 +211,7 @@ def split_nullable(typ: type) -> tuple[bool, type]:
                 nullable = True
             else:
                 args.append(arg)
-        return nullable, Union[tuple(args)]  # type: ignore
+        return nullable, functools.reduce(operator.or_, args)
     return nullable, typ
 
 
@@ -256,7 +249,7 @@ class ModelBase:
         cls,
         *,
         table_name: str,
-        primary_key: Union[FieldNames, str] = (),
+        primary_key: FieldNames | str = (),
         insert_multiple_mode: str = "unnest",
         **kwargs: Any,
     ):
@@ -335,7 +328,7 @@ class ModelBase:
             return cls._column_info
 
     @classmethod
-    def table_name_sql(cls, *, prefix: Optional[str] = None) -> Fragment:
+    def table_name_sql(cls, *, prefix: str | None = None) -> Fragment:
         """Generate SQL fragment for the table name.
 
         Args:
@@ -353,7 +346,7 @@ class ModelBase:
         return sql.identifier(cls.table_name, prefix=prefix)
 
     @classmethod
-    def primary_key_names_sql(cls, *, prefix: Optional[str] = None) -> list[Fragment]:
+    def primary_key_names_sql(cls, *, prefix: str | None = None) -> list[Fragment]:
         """Generate SQL fragments for primary key column names.
 
         Args:
@@ -412,9 +405,9 @@ class ModelBase:
     def field_names_sql(
         cls,
         *,
-        prefix: Optional[str] = None,
+        prefix: str | None = None,
         exclude: FieldNamesSet = (),
-        as_prepended: Optional[str] = None,
+        as_prepended: str | None = None,
     ) -> list[Fragment]:
         """Generate SQL fragments for field names.
 
@@ -533,7 +526,7 @@ class ModelBase:
     @classmethod
     def _get_from_mapping_fn(
         cls: type[T],
-    ) -> Callable[[Union[Mapping[str, Any], Row]], T]:
+    ) -> Callable[[Mapping[str, Any] | Row], T]:
         """Generate optimized function to create instances from mappings.
 
         This method generates and compiles a function that efficiently creates
@@ -561,7 +554,7 @@ class ModelBase:
         return env["from_mapping"]
 
     @classmethod
-    def from_mapping(cls: type[T], mapping: Union[Mapping[str, Any], Row], /) -> T:
+    def from_mapping(cls: type[T], mapping: Mapping[str, Any] | Row, /) -> T:
         """Create a model instance from a dictionary-like mapping.
 
         This method applies any configured deserialize functions to the values
@@ -617,7 +610,7 @@ class ModelBase:
         return cls.from_mapping(filtered_dict)
 
     @classmethod
-    def ensure_model(cls: type[T], row: Union[T, Mapping[str, Any]]) -> T:
+    def ensure_model(cls: type[T], row: T | Mapping[str, Any]) -> T:
         """Ensure the input is a model instance, converting from mapping if needed.
 
         Args:
@@ -661,7 +654,7 @@ class ModelBase:
     def select_sql(
         cls,
         where: Where = (),
-        order_by: Union[FieldNames, str] = (),
+        order_by: FieldNames | str = (),
         for_update: bool = False,
     ) -> Fragment:
         """Generate SELECT SQL for this model.
@@ -724,7 +717,7 @@ class ModelBase:
     def select_cursor(
         cls: type[T],
         connection: AnyConnection,
-        order_by: Union[FieldNames, str] = (),
+        order_by: FieldNames | str = (),
         for_update: bool = False,
         where: Where = (),
         prefetch: int = 1000,
@@ -772,7 +765,7 @@ class ModelBase:
     async def select(
         cls: type[T],
         connection: AnyFetchable,
-        order_by: Union[FieldNames, str] = (),
+        order_by: FieldNames | str = (),
         for_update: bool = False,
         where: Where = (),
     ) -> list[T]:
@@ -1375,7 +1368,7 @@ class ModelBase:
     async def plan_replace_multiple(
         cls: type[T],
         connection: AnyConnection,
-        rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
+        rows: Iterable[T] | Iterable[Mapping[str, Any]],
         *,
         where: Where,
         ignore: FieldNamesSet = (),
@@ -1445,7 +1438,7 @@ class ModelBase:
     async def replace_multiple(
         cls: type[T],
         connection: AnyConnection,
-        rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
+        rows: Iterable[T] | Iterable[Mapping[str, Any]],
         *,
         where: Where,
         ignore: FieldNamesSet = (),
@@ -1520,7 +1513,7 @@ class ModelBase:
     async def replace_multiple_reporting_differences(
         cls: type[T],
         connection: AnyConnection,
-        rows: Union[Iterable[T], Iterable[Mapping[str, Any]]],
+        rows: Iterable[T] | Iterable[Mapping[str, Any]],
         *,
         where: Where,
         ignore: FieldNamesSet = (),

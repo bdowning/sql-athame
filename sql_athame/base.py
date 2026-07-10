@@ -2,17 +2,14 @@ import dataclasses
 import json
 import re
 import string
-from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Sequence
 from typing import (
     Any,
-    Callable,
-    Optional,
+    Literal,
     Union,
     cast,
     overload,
 )
-
-from typing_extensions import Literal
 
 from .engines import async_cursor, async_execute, async_fetch
 from .escape import escape
@@ -194,7 +191,7 @@ class Fragment:
     @overload
     def prep_query(
         self, allow_slots: Literal[True]
-    ) -> tuple[str, list[Union[Placeholder, Slot]]]: ...  # pragma: no cover
+    ) -> tuple[str, list[Placeholder | Slot]]: ...  # pragma: no cover
 
     @overload
     def prep_query(
@@ -218,7 +215,7 @@ class Fragment:
         """
         parts: list[FlatPart] = []
         self.flatten_into(parts)
-        args: list[Union[Placeholder, Slot]] = []
+        args: list[Placeholder | Slot] = []
         placeholder_ids: dict[Placeholder, int] = {}
         slot_ids: dict[Slot, int] = {}
         out_parts: list[str] = []
@@ -368,7 +365,7 @@ class Fragment:
     async def fetch(self, conn: AnyFetchable) -> list[Row]:
         return await async_fetch(conn, self)
 
-    async def fetchrow(self, conn: AnyFetchable) -> Optional[Row]:
+    async def fetchrow(self, conn: AnyFetchable) -> Row | None:
         rows = await self.fetch(conn)
         if rows:
             return rows[0]
@@ -545,7 +542,7 @@ class SQLFormatter:
         return Fragment([text])
 
     @staticmethod
-    def identifier(name: str, prefix: Optional[str] = None) -> Fragment:
+    def identifier(name: str, prefix: str | None = None) -> Fragment:
         """Create a Fragment with a quoted SQL identifier.
 
         Creates a properly quoted identifier name, optionally with a dotted prefix
@@ -677,7 +674,7 @@ class SQLFormatter:
             >>> insert_query = sql("INSERT INTO users (name, age) SELECT * FROM {}",
             ...                   sql.unnest(users_data, ["text", "integer"]))
         """
-        nested = [nest_for_type(x, t) for x, t in zip(zip(*data), types)]
+        nested = [nest_for_type(x, t) for x, t in zip(zip(*data), types)]  # noqa: B905
         if not nested:
             nested = [nest_for_type([], t) for t in types]
         return Fragment(["UNNEST(", self.list(nested), ")"])
@@ -780,8 +777,8 @@ def any_all(frags: list[Fragment], op: str, base_case: str) -> Fragment:
 def join_parts(
     parts: Iterable[Part],
     infix: Part,
-    prefix: Optional[Part] = None,
-    suffix: Optional[Part] = None,
+    prefix: Part | None = None,
+    suffix: Part | None = None,
 ) -> Iterator[Part]:
     """Join parts with a separator, optionally adding prefix and suffix.
 
