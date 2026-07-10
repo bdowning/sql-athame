@@ -17,11 +17,11 @@ jobs:
         with:
           version: "0.6.6"
           enable-cache: true
-          python-version: '3.12'
+          python-version: '3.14'
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
 
       - run: uv build
       - run: uv publish
