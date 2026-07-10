@@ -102,6 +102,7 @@ report.precision = 2
 [tool.mypy]
 disallow_incomplete_defs = true
 check_untyped_defs = true
+warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = [

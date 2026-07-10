@@ -309,7 +309,7 @@ class Fragment:
                 func.append(f"  value_{i},")
         func += [" ]"]
         exec("\n".join(func), env)
-        return query, env["generate_args"]  # type: ignore
+        return query, env["generate_args"]
 
     def __iter__(self) -> Iterator[Any]:
         """Make Fragment iterable for use with asyncpg and similar drivers.
