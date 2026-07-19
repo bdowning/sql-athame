@@ -1,11 +1,8 @@
-# ruff: noqa: UP007
-
 from __future__ import annotations
 
-import sys
 import uuid
 from dataclasses import dataclass
-from typing import Annotated, Any, Optional, Union
+from typing import Annotated, Any
 
 import pytest
 
@@ -18,6 +15,7 @@ def test_modelclass():
     class Test(ModelBase, table_name="table"):
         foo: int
         bar: str = "hi"
+        py_only: Annotated[Any, ColumnInfo(python_only=True)] = uuid.uuid4
 
     t = Test(42)
 
@@ -85,7 +83,7 @@ def test_modelclass_implicit_types():
     class Test(ModelBase, table_name="table", primary_key="foo"):
         foo: int
         bar: str
-        baz: Optional[uuid.UUID]
+        baz: uuid.UUID | None
         quux: Annotated[int, ColumnInfo(constraints="REFERENCES foobar")]
         quuux: Annotated[
             int,
@@ -96,8 +94,8 @@ def test_modelclass_implicit_types():
         any_not_null: Annotated[Any, ColumnInfo(type="TEXT", nullable=False)]
         obj: Annotated[object, ColumnInfo(type="TEXT")]
         obj_not_null: Annotated[object, ColumnInfo(type="TEXT", nullable=False)]
-        combined_nullable: Annotated[Union[int, Any], ColumnInfo(type="INTEGER")]
-        null_jsonb: Annotated[Optional[dict], ColumnInfo(type="JSONB")]
+        combined_nullable: Annotated[int | Any, ColumnInfo(type="INTEGER")]
+        null_jsonb: Annotated[dict | None, ColumnInfo(type="JSONB")]
         not_null_jsonb: Annotated[dict, ColumnInfo(type="JSONB")]
 
     assert list(Test.create_table_sql()) == [
@@ -118,7 +116,6 @@ def test_modelclass_implicit_types():
     ]
 
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="needs python3.10 or greater")
 def test_py310_unions():
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="foo"):

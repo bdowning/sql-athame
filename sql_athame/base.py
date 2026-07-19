@@ -2,21 +2,19 @@ import dataclasses
 import json
 import re
 import string
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Sequence
 from typing import (
     Any,
-    Callable,
-    Optional,
+    Literal,
     Union,
     cast,
     overload,
 )
 
-from typing_extensions import Literal
-
+from .engines import async_cursor, async_execute, async_fetch
 from .escape import escape
 from .sqlalchemy import sqlalchemy_text_from_fragment
-from .types import FlatPart, Part, Placeholder, Slot
+from .types import AnyConnection, AnyFetchable, FlatPart, Part, Placeholder, Row, Slot
 
 newline_whitespace_re = re.compile(r"\s*\n\s*")
 auto_numbered_re = re.compile(r"[A-Za-z0-9_]")
@@ -193,7 +191,7 @@ class Fragment:
     @overload
     def prep_query(
         self, allow_slots: Literal[True]
-    ) -> tuple[str, list[Union[Placeholder, Slot]]]: ...  # pragma: no cover
+    ) -> tuple[str, list[Placeholder | Slot]]: ...  # pragma: no cover
 
     @overload
     def prep_query(
@@ -217,7 +215,7 @@ class Fragment:
         """
         parts: list[FlatPart] = []
         self.flatten_into(parts)
-        args: list[Union[Placeholder, Slot]] = []
+        args: list[Placeholder | Slot] = []
         placeholder_ids: dict[Placeholder, int] = {}
         slot_ids: dict[Slot, int] = {}
         out_parts: list[str] = []
@@ -311,7 +309,7 @@ class Fragment:
                 func.append(f"  value_{i},")
         func += [" ]"]
         exec("\n".join(func), env)
-        return query, env["generate_args"]  # type: ignore
+        return query, env["generate_args"]
 
     def __iter__(self) -> Iterator[Any]:
         """Make Fragment iterable for use with asyncpg and similar drivers.
@@ -327,7 +325,11 @@ class Fragment:
             >>> list(frag)
             ['SELECT * FROM users WHERE id = $1 AND name = $2', 42, 'Alice']
             >>> # Can be used directly with asyncpg
-            >>> await conn.fetch(*frag)
+            >>> class Conn:
+            ...     async def fetch(self, query, *args):
+            ...         return [query, *args]
+            >>> await Conn().fetch(*frag)
+            ['SELECT * FROM users WHERE id = $1 AND name = $2', 42, 'Alice']
         """
         sql, args = self.query()
         return iter((sql, *args))
@@ -356,6 +358,29 @@ class Fragment:
             >>> case = sql("CASE {clauses} END", clauses=sql(" ").join(clauses))
         """
         return Fragment(list(join_parts(parts, infix=self)))
+
+    async def execute(self, conn: AnyFetchable) -> str:
+        return await async_execute(conn, self)
+
+    async def fetch(self, conn: AnyFetchable) -> list[Row]:
+        return await async_fetch(conn, self)
+
+    async def fetchrow(self, conn: AnyFetchable) -> Row | None:
+        rows = await self.fetch(conn)
+        if rows:
+            return rows[0]
+        return None
+
+    async def fetchval(self, conn: AnyFetchable) -> Any:
+        row = await self.fetchrow(conn)
+        if row:
+            return row[0]
+        return None
+
+    def cursor(
+        self, conn: AnyConnection, *, prefetch: int = 1000
+    ) -> AsyncIterator[Row]:
+        return async_cursor(conn, self, prefetch=prefetch)
 
 
 class SQLFormatter:
@@ -394,14 +419,15 @@ class SQLFormatter:
 
         Example:
             >>> sql("SELECT * FROM users WHERE id = {}", 42)
-            Fragment(['SELECT * FROM users WHERE id = ', Placeholder('0', 42)])
+            Fragment(parts=['SELECT * FROM users WHERE id = ', Placeholder(name='0', value=42)])
 
             >>> sql("SELECT * FROM users WHERE id = {id} AND name = {name}", id=42, name="Alice")
-            Fragment(['SELECT * FROM users WHERE id = ', Placeholder('id', 42), ' AND name = ', Placeholder('name', 'Alice')])
+            Fragment(parts=['SELECT * FROM users WHERE id = ', Placeholder(name='id', value=42), ' AND name = ', Placeholder(name='name', value='Alice')])
 
             >>> # Fragments can be embedded
             >>> where_clause = sql("active = {}", True)
             >>> sql("SELECT * FROM users WHERE {}", where_clause)
+            Fragment(parts=['SELECT * FROM users WHERE ', Fragment(parts=['active = ', Placeholder(name='0', value=True)])])
         """
         if not preserve_formatting:
             fmt = newline_whitespace_re.sub(" ", fmt)
@@ -443,7 +469,7 @@ class SQLFormatter:
 
         Example:
             >>> sql.value(42)
-            Fragment([Placeholder('value', 42)])
+            Fragment(parts=[Placeholder(name='value', value=42)])
         """
         placeholder = Placeholder("value", value)
         return Fragment([placeholder])
@@ -511,12 +537,12 @@ class SQLFormatter:
 
         Example:
             >>> sql.literal("ORDER BY created_at DESC")
-            Fragment(['ORDER BY created_at DESC'])
+            Fragment(parts=['ORDER BY created_at DESC'])
         """
         return Fragment([text])
 
     @staticmethod
-    def identifier(name: str, prefix: Optional[str] = None) -> Fragment:
+    def identifier(name: str, prefix: str | None = None) -> Fragment:
         """Create a Fragment with a quoted SQL identifier.
 
         Creates a properly quoted identifier name, optionally with a dotted prefix
@@ -648,7 +674,7 @@ class SQLFormatter:
             >>> insert_query = sql("INSERT INTO users (name, age) SELECT * FROM {}",
             ...                   sql.unnest(users_data, ["text", "integer"]))
         """
-        nested = [nest_for_type(x, t) for x, t in zip(zip(*data), types)]
+        nested = [nest_for_type(x, t) for x, t in zip(zip(*data), types)]  # noqa: B905
         if not nested:
             nested = [nest_for_type([], t) for t in types]
         return Fragment(["UNNEST(", self.list(nested), ")"])
@@ -751,8 +777,8 @@ def any_all(frags: list[Fragment], op: str, base_case: str) -> Fragment:
 def join_parts(
     parts: Iterable[Part],
     infix: Part,
-    prefix: Optional[Part] = None,
-    suffix: Optional[Part] = None,
+    prefix: Part | None = None,
+    suffix: Part | None = None,
 ) -> Iterator[Part]:
     """Join parts with a separator, optionally adding prefix and suffix.
 

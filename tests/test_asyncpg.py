@@ -1,5 +1,3 @@
-# ruff: noqa: UP007
-
 from __future__ import annotations
 
 import asyncio
@@ -7,28 +5,40 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, TypeAlias
 
 import asyncpg
 import pytest
-from typing_extensions import TypeAlias
 
 from sql_athame import ColumnInfo, ModelBase, sql
 
 
-@pytest.fixture(autouse=True)
-async def conn():
+@pytest.fixture(autouse=True, params=["asyncpg", "sqlalchemy"])
+async def conn(request):
     port = os.environ.get("PGPORT", 29329)
-    conn = await asyncpg.connect(
-        f"postgres://postgres:password@localhost:{port}/postgres"
-    )
-    txn = conn.transaction()
-    try:
-        await txn.start()
-        yield conn
-    finally:
-        await txn.rollback()
-        await conn.close()
+    dsn = f"postgres://postgres:password@localhost:{port}/postgres"
+    if request.param == "asyncpg":
+        conn = await asyncpg.connect(dsn)
+        txn = conn.transaction()
+        try:
+            await txn.start()
+            yield conn
+        finally:
+            await txn.rollback()
+            await conn.close()
+    else:
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine(
+            dsn.replace("postgres://", "postgresql+asyncpg://", 1)
+        )
+        async with engine.connect() as sa_conn:
+            await sa_conn.begin()
+            try:
+                yield sa_conn
+            finally:
+                await sa_conn.rollback()
+        await engine.dispose()
 
 
 @dataclass
@@ -39,17 +49,18 @@ class Table1(ModelBase, table_name="table1"):
 
 @pytest.fixture(autouse=True)
 async def tables(conn):
-    await conn.execute(*Table1.create_table_sql())
+    await Table1.create_table_sql().execute(conn)
 
 
 async def test_connection(conn):
-    assert await conn.fetchval("SELECT 2 + 2") == 4
+    assert await sql("SELECT 2 + 2").fetchval(conn) == 4
 
 
 async def test_select(conn, tables):
-    assert len(await conn.fetch("SELECT * FROM table1")) == 0
+    assert len(await sql("SELECT * FROM table1").fetch(conn)) == 0
     await Table1(42, "foo").insert(conn)
-    res = await conn.fetchrow("SELECT * FROM table1")
+    res = await sql("SELECT * FROM table1").fetchrow(conn)
+    assert res
     assert list(res.keys()) == ["a", "b"]
 
 
@@ -60,7 +71,7 @@ async def test_replace_multiple(conn):
         a: int
         b: str
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
     await Test.insert_multiple(conn, [])
     await Test.upsert_multiple(conn, [])
 
@@ -85,7 +96,7 @@ async def test_replace_multiple(conn):
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
-    await conn.execute("DELETE FROM test")
+    await sql("DELETE FROM test").execute(conn)
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(
@@ -109,7 +120,7 @@ async def test_replace_multiple_ignore_insert_only(conn):
         created: datetime = field(default_factory=datetime.utcnow)
         updated: datetime = field(default_factory=datetime.utcnow)
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     data = [Test(1, 1), Test(2, 1), Test(3, 2)]
     await Test.insert_multiple(conn, data)
@@ -156,6 +167,11 @@ async def test_replace_multiple_ignore_insert_only(conn):
 
 @pytest.mark.parametrize("insert_multiple_mode", ["array_safe", "executemany"])
 async def test_replace_multiple_arrays(conn, insert_multiple_mode):
+    if insert_multiple_mode == "executemany" and not isinstance(
+        conn, asyncpg.Connection
+    ):
+        pytest.skip("executemany requires asyncpg")
+
     @dataclass(order=True)
     class Test(
         ModelBase,
@@ -167,7 +183,7 @@ async def test_replace_multiple_arrays(conn, insert_multiple_mode):
         a: Annotated[list[int], ColumnInfo(type="INT[]")]
         b: str
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
     await Test.insert_multiple(conn, [])
     await Test.upsert_multiple(conn, [])
 
@@ -192,7 +208,7 @@ async def test_replace_multiple_arrays(conn, insert_multiple_mode):
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
-    await conn.execute("DELETE FROM test")
+    await sql("DELETE FROM test").execute(conn)
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple(
@@ -215,7 +231,7 @@ async def test_replace_multiple_reporting_differences(conn):
         a: int
         b: str
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     data = [
         Test(1, 1, "foo"),
@@ -240,7 +256,7 @@ async def test_replace_multiple_reporting_differences(conn):
     assert len(d) == 2
     assert [x.id for x in await Test.select(conn)] == [3]
 
-    await conn.execute("DELETE FROM test")
+    await sql("DELETE FROM test").execute(conn)
     await Test.insert_multiple(conn, data)
 
     c, u, d = await Test.replace_multiple_reporting_differences(
@@ -265,7 +281,7 @@ async def test_replace_multiple_multicolumn_pk(conn):
         a: int
         b: str
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     data = [
         Test(1, 1, 1, "foo"),
@@ -297,7 +313,7 @@ async def test_serial(conn):
         foo: int
         bar: str
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
     t = await Test.create(conn, foo=42, bar="bar")
     assert t == Test(1, 42, "bar")
     t = await Test.create(conn, foo=42, bar="bar")
@@ -310,13 +326,14 @@ async def test_unnest_json(conn):
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="id"):
         id: Serial
-        json: Annotated[Optional[list], ColumnInfo(type="JSONB", nullable=True)]
+        json: Annotated[list | None, ColumnInfo(type="JSONB", nullable=True)]
 
-    await conn.set_type_codec(
-        "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
-    )
+    if isinstance(conn, asyncpg.Connection):
+        await conn.set_type_codec(
+            "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+        )
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     rows = [
         Test(1, ["foo"]),
@@ -327,9 +344,9 @@ async def test_unnest_json(conn):
     await Test.insert_multiple(conn, rows)
 
     assert list(await Test.select(conn)) == rows
-    assert list(
-        await conn.fetchrow('SELECT COUNT(*) FROM "table" WHERE json IS NULL')
-    ) == [1]
+    row = await sql('SELECT COUNT(*) FROM "table" WHERE json IS NULL').fetchrow(conn)
+    assert row
+    assert list(row) == [1]
 
 
 async def test_unnest_empty(conn):
@@ -337,7 +354,7 @@ async def test_unnest_empty(conn):
     class Test(ModelBase, table_name="table", primary_key="id"):
         id: Serial
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     await Test.insert_multiple(conn, [])
 
@@ -352,7 +369,7 @@ async def test_upsert_insert_only(conn):
         count: int
         created_at: str
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     # Initial insert
     record = Test(1, "Alice", 5, "2023-01-01")
@@ -409,7 +426,7 @@ async def test_replace_multiple_with_replace_ignore(conn):
         # metadata field should be ignored during comparison
         metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     # Insert initial data
     data = [
@@ -460,7 +477,7 @@ async def test_replace_multiple_replace_ignore_with_force_update(conn):
         name: str
         metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     # Insert initial data
     data = [Test(1, "Alice", "meta1"), Test(2, "Bob", "meta2")]
@@ -493,7 +510,7 @@ async def test_replace_multiple_replace_ignore_with_insert_only(conn):
         # Only replace_ignore
         metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     # Insert initial data
     data = [Test(1, "Alice", "2023-01-01", "meta1")]
@@ -536,7 +553,7 @@ async def test_replace_multiple_replace_ignore_partial_match(conn):
         value: int
         metadata: Annotated[str, ColumnInfo(replace_ignore=True)]
 
-    await conn.execute(*Test.create_table_sql())
+    await Test.create_table_sql().execute(conn)
 
     # Insert data with different categories
     data = [
