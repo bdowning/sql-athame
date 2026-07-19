@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import uuid
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -116,7 +115,6 @@ def test_modelclass_implicit_types():
     ]
 
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="needs python3.10 or greater")
 def test_py310_unions():
     @dataclass
     class Test(ModelBase, table_name="table", primary_key="foo"):
