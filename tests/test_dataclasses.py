@@ -15,6 +15,7 @@ def test_modelclass():
     class Test(ModelBase, table_name="table"):
         foo: int
         bar: str = "hi"
+        py_only: Annotated[Any, ColumnInfo(python_only=True)] = uuid.uuid4
 
     t = Test(42)
 

@@ -44,6 +44,7 @@ class ColumnInfo:
         deserialize: Function to transform database values back to Python objects
         insert_only: Whether this field should only be set on INSERT, not UPDATE in upsert operations
         replace_ignore: Whether this field should be ignored for `replace_multiple`
+        python_only: Whether this field should be ignored by sql-athame (and the database)
 
     Example:
         >>> from dataclasses import dataclass
@@ -73,6 +74,8 @@ class ColumnInfo:
     insert_only: bool | None = None
     replace_ignore: bool | None = None
 
+    python_only: bool | None = None
+
     def __post_init__(self, constraints: str | Iterable[str] | None) -> None:
         if constraints is not None:
             if type(constraints) is str:
@@ -101,6 +104,7 @@ class ColumnInfo:
             replace_ignore=(
                 b.replace_ignore if b.replace_ignore is not None else a.replace_ignore
             ),
+            python_only=b.python_only if b.python_only is not None else a.python_only,
         )
 
 
@@ -138,7 +142,7 @@ class ConcreteColumnInfo:
     @staticmethod
     def from_column_info(
         field: Field, type_hint: Any, *args: ColumnInfo
-    ) -> "ConcreteColumnInfo":
+    ) -> "ConcreteColumnInfo | None":
         """Create ConcreteColumnInfo from a field and its ColumnInfo metadata.
 
         Args:
@@ -153,6 +157,8 @@ class ConcreteColumnInfo:
             ValueError: If no SQL type can be determined for the field
         """
         info = functools.reduce(ColumnInfo.merge, args, ColumnInfo())
+        if info.python_only:
+            return None
         if info.create_type is None and info.type is not None:
             info.create_type = info.type
             info.type = sql_create_type_map.get(info.type.upper(), info.type)
@@ -281,7 +287,9 @@ class ModelBase:
             return cls._cache[key]
 
     @classmethod
-    def column_info_for_field(cls, field: Field, type_hint: type) -> ConcreteColumnInfo:
+    def column_info_for_field(
+        cls, field: Field, type_hint: type
+    ) -> ConcreteColumnInfo | None:
         """Generate ConcreteColumnInfo for a dataclass field.
 
         Analyzes the field's type hint and metadata to determine SQL column properties.
@@ -322,8 +330,9 @@ class ModelBase:
         except AttributeError:
             type_hints = get_type_hints(cls, include_extras=True)
             cls._column_info = {
-                f.name: cls.column_info_for_field(f, type_hints[f.name])
+                f.name: ci
                 for f in fields(cls)  # type: ignore
+                if (ci := cls.column_info_for_field(f, type_hints[f.name]))
             }
             return cls._column_info
 
